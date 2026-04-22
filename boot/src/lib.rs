@@ -1,16 +1,12 @@
-mod runtime;
-mod config;
-
-pub mod contract;
-pub mod types;
-pub mod infra;
-pub mod routing;
-
-use crate::runtime::dispatcher::Dispatcher;
+use core::engine::Kernel;
+use core::error::ErrorResponder;
+use core::handler::HandlerRegistryBuilder;
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
+
+pub mod config;
 
 pub fn run() {
     Runtime::new().unwrap().block_on(async {
@@ -18,18 +14,21 @@ pub fn run() {
         let listener = TcpListener::bind(config.addr()).await.unwrap();
         println!("server running on {}", config.addr());
 
-
-        let dispatcher = Arc::new(Dispatcher::build());
+        let kernel = Arc::new(Kernel::new(
+            HandlerRegistryBuilder::new().build(),
+            vec![],
+            ErrorResponder::new(),
+        ));
         loop {
             let (socket, _) = listener.accept().await.unwrap();
-            let dispatcher = Arc::clone(&dispatcher);
+            let kernel = Arc::clone(&kernel);
 
             tokio::spawn(async move {
                 let io = TokioIo::new(socket);
 
                 let service = hyper::service::service_fn(move |req| {
-                    let dispatcher = Arc::clone(&dispatcher);
-                    async move { dispatcher.dispatch(req).await }
+                    let kernel = Arc::clone(&kernel);
+                    async move { kernel.handle(req).await }
                 });
 
                 hyper::server::conn::http1::Builder::new()

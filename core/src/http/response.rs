@@ -1,8 +1,10 @@
-use crate::types::http_types::HttpResponse;
 use bytes::Bytes;
 use http::{HeaderMap, HeaderName, HeaderValue, Response as LibResponse, StatusCode};
 use http_body_util::combinators::BoxBody;
 use serde::Serialize;
+use std::convert::Infallible;
+
+pub type HttpResponse = LibResponse<BoxBody<Bytes, Infallible>>;
 
 pub enum ResponseBody {
     Text(String),
@@ -91,18 +93,24 @@ impl ResponseBuilder {
         self
     }
 
-    pub fn text(mut self, text: String) -> Self {
+    pub fn text(mut self, text: String) -> Response {
         self.header("Content-Type", "text/plain; charset=utf-8")
             .body(ResponseBody::Text(text))
     }
 
-    pub fn json<T: Serialize>(mut self, json: T) -> Self {
-        self.header("Content-Type", "application/json; charset=utf-8")
-            .body(ResponseBody::Text(serde_json::to_string(&json).unwrap()))
+    pub fn json<T: Serialize>(mut self, json: T) -> Result<Response, serde_json::Error> {
+        let json_str = serde_json::to_string(&json)?;
+        Ok(self
+            .header("Content-Type", "application/json; charset=utf-8")
+            .body(ResponseBody::Text(json_str)))
     }
 
-    pub fn bytes(self, bytes: Vec<u8>) -> Self {
+    pub fn bytes(self, bytes: Vec<u8>) -> Response {
         self.body(ResponseBody::Bytes(bytes))
+    }
+
+    pub fn none(self) -> Response {
+        self.body(ResponseBody::None)
     }
 
     pub fn build(self) -> Response {
@@ -113,8 +121,8 @@ impl ResponseBuilder {
         }
     }
 
-    fn body(mut self, data: ResponseBody) -> Self {
+    fn body(mut self, data: ResponseBody) -> Response {
         self.data = data;
-        self
+        self.build()
     }
 }

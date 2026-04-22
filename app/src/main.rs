@@ -1,4 +1,4 @@
-use framework::run;
+use boot::run;
 
 fn main() {
     run();
