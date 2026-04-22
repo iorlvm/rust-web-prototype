@@ -10,7 +10,7 @@ pub enum Order {
     Lowest, // only for frameworks
 }
 impl Order {
-    fn weight(&self) -> u8 {
+    pub fn weight(&self) -> u8 {
         match self {
             Order::Highest => 0,
             Order::High => 63,

@@ -14,6 +14,12 @@ pub struct Filed {
 
 pub struct MultipartResolver {}
 
+impl MultipartResolver {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
 #[async_trait]
 impl Filter for MultipartResolver {
     async fn before(&self, req: &mut Request) -> Result<Option<Response>, AppError> {

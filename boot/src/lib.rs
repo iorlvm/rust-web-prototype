@@ -1,5 +1,6 @@
 use core::engine::Kernel;
 use core::error::ErrorResponder;
+use core::filter::FilterChainBuilder;
 use core::handler::HandlerRegistryBuilder;
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ pub fn run() {
 
         let kernel = Arc::new(Kernel::new(
             HandlerRegistryBuilder::new().build(),
-            vec![],
+            FilterChainBuilder::new().with_default().build(),
             ErrorResponder::new(),
         ));
         loop {
