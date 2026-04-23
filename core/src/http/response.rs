@@ -93,12 +93,12 @@ impl ResponseBuilder {
         self
     }
 
-    pub fn text(mut self, text: String) -> Response {
+    pub fn text(self, text: String) -> Response {
         self.header("Content-Type", "text/plain; charset=utf-8")
             .body(ResponseBody::Text(text))
     }
 
-    pub fn json<T: Serialize>(mut self, json: T) -> Result<Response, serde_json::Error> {
+    pub fn json<T: Serialize>(self, json: T) -> Result<Response, serde_json::Error> {
         let json_str = serde_json::to_string(&json)?;
         Ok(self
             .header("Content-Type", "application/json; charset=utf-8")
