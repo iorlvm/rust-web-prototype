@@ -4,20 +4,24 @@ use crate::handler::{Handler, HandlerRegistry};
 use crate::http::{HttpRequest, HttpResponse, Request, Response};
 use http::StatusCode;
 use std::convert::Infallible;
+use std::sync::Arc;
 
-pub struct Kernel {
+pub struct Kernel<T: Send + Sync + 'static> {
+    injected: Arc<T>,
     registry: HandlerRegistry,
     filters: Vec<Box<dyn Filter>>,
     error_responder: ErrorResponder,
 }
 
-impl Kernel {
+impl<T: Send + Sync + 'static> Kernel<T> {
     pub fn new(
+        injected: T,
         registry: HandlerRegistry,
         filters: Vec<Box<dyn Filter>>,
         error_responder: ErrorResponder,
     ) -> Self {
         Self {
+            injected: Arc::new(injected),
             registry,
             filters,
             error_responder,
@@ -67,6 +71,8 @@ impl Kernel {
         handler: &dyn Handler,
         mut req: Request,
     ) -> Result<Response, AppError> {
+        req.insert(self.injected.clone());
+
         let mut last: Option<usize> = None;
         let mut result_opt: Option<Result<Response, AppError>> = None;
 

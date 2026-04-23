@@ -2,6 +2,7 @@ use http::HeaderValue;
 use hyper::body::Incoming;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub type HttpRequest = http::Request<Incoming>;
 
@@ -35,6 +36,12 @@ impl Request {
         self.context
             .get(&TypeId::of::<T>())
             .and_then(|v| v.downcast_ref::<T>())
+    }
+
+    pub fn get_injected<T: Send + Sync + 'static>(&self) -> Arc<T> {
+        self.get::<Arc<T>>()
+            .cloned()
+            .expect("injected resource missing: check the requested type T")
     }
 
     // http request methods

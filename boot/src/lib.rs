@@ -16,8 +16,9 @@ pub fn run() {
         println!("server running on {}", config.addr());
 
         let kernel = Arc::new(Kernel::new(
+            (),
             HandlerRegistryBuilder::new().build(),
-            FilterChainBuilder::new().with_default().build(),
+            FilterChainBuilder::new().build(),
             ErrorResponder::new(),
         ));
         loop {
