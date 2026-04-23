@@ -2,25 +2,26 @@ use crate::filter::extensions::MultipartResolver;
 use crate::filter::Filter;
 
 pub struct FilterChainBuilder {
-    filters: Vec<Box<dyn Filter>>,
+    kernel_filters: Vec<Box<dyn Filter>>,
+    custom_filters: Vec<Box<dyn Filter>>,
 }
 
 impl FilterChainBuilder {
     pub fn new() -> Self {
-        Self { filters: vec![] }
+        Self {
+            kernel_filters: vec![Box::new(MultipartResolver::new())],
+            custom_filters: vec![],
+        }
     }
 
-    pub fn with_default(mut self) -> Self {
-        self.with_filter(MultipartResolver::new())
-    }
-
-    pub fn with_filter(mut self, filter: impl Filter + 'static) -> Self {
-        self.filters.push(Box::new(filter));
+    pub fn add_filter(mut self, filter: impl Filter + 'static) -> Self {
+        self.custom_filters.push(Box::new(filter));
         self
     }
+    pub fn build(self) -> Vec<Box<dyn Filter>> {
+        let mut chain = self.kernel_filters;
+        chain.extend(self.custom_filters);
 
-    pub fn build(mut self) -> Vec<Box<dyn Filter>> {
-        self.filters.sort_by_key(|f| f.order().weight());
-        self.filters
+        chain
     }
 }
