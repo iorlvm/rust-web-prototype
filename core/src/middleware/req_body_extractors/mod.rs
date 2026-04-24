@@ -1,7 +1,7 @@
 mod json_extractor;
 mod multipart_extractor;
 
-use crate::error::AppError;
+use crate::error::KernelError;
 use crate::http::{Request, Response};
 use crate::middleware::Middleware;
 use async_trait::async_trait;
@@ -16,7 +16,7 @@ pub trait RequestBodyExtractor: Send + Sync {
 
     fn matches(&self, content_type: &str) -> bool;
 
-    fn convert(&self, bytes: Bytes) -> Result<Self::Output, AppError>;
+    fn convert(&self, bytes: Bytes) -> Result<Self::Output, KernelError>;
 }
 
 #[async_trait]
@@ -24,7 +24,7 @@ impl<T> Middleware for T
 where
     T: RequestBodyExtractor + Send + Sync,
 {
-    async fn before(&self, req: &mut Request) -> Result<Option<Response>, AppError> {
+    async fn before(&self, req: &mut Request) -> Result<Option<Response>, KernelError> {
         let Some(content_type) = req.content_type() else {
             return Ok(None);
         };
@@ -41,7 +41,7 @@ where
         let bytes = body
             .collect()
             .await
-            .map_err(|_| AppError::BodyExt(String::from("Body collect error")))?
+            .map_err(|_| KernelError::BodyReadFailed(String::from("Body collect error")))?
             .to_bytes();
 
         let body = self.convert(bytes)?;
@@ -53,8 +53,8 @@ where
     async fn after(
         &self,
         _: &mut Request,
-        result: Result<Response, AppError>,
-    ) -> Result<Response, AppError> {
+        result: Result<Response, KernelError>,
+    ) -> Result<Response, KernelError> {
         result
     }
 }

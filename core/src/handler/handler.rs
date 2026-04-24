@@ -1,4 +1,4 @@
-use crate::error::AppError;
+use crate::error::KernelError;
 use crate::http::{Request, Response};
 use crate::middleware::Middleware;
 use crate::runtime::request_chain::request_chain;
@@ -44,7 +44,7 @@ impl Handler {
 
 #[async_trait]
 impl Endpoint for Handler {
-    async fn execute(&self, req: &mut Request) -> Result<Response, AppError> {
+    async fn execute(&self, req: &mut Request) -> Result<Response, KernelError> {
         request_chain(req, self.endpoint.as_ref(), &self.middleware).await
     }
 }

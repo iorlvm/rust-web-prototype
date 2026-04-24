@@ -1,8 +1,7 @@
-use crate::error::AppError;
+use crate::error::KernelError;
 use crate::middleware::req_body_extractors::RequestBodyExtractor;
+use crate::types::Multipart;
 use bytes::Bytes;
-
-pub type Multipart = Vec<Filed>;
 
 pub struct Filed {
     pub name: String,
@@ -21,7 +20,7 @@ impl RequestBodyExtractor for MultipartExtractor {
         false
     }
 
-    fn convert(&self, bytes: Bytes) -> Result<Self::Output, AppError> {
+    fn convert(&self, bytes: Bytes) -> Result<Self::Output, KernelError> {
         todo!()
     }
 }

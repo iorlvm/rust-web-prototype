@@ -3,7 +3,7 @@ pub mod config;
 
 use builder::KernelMiddlewareChainBuilder;
 use core::engine::Kernel;
-use core::error::ErrorResponder;
+use core::error::ErrorDispatcher;
 use core::handler::HandlerRegistryBuilder;
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ pub fn run() {
             (),
             HandlerRegistryBuilder::default().build(),
             KernelMiddlewareChainBuilder::default().build(),
-            ErrorResponder::new(),
+            ErrorDispatcher::default(),
         ));
         loop {
             let (socket, _) = listener.accept().await.unwrap();

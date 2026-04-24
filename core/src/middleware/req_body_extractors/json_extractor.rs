@@ -1,8 +1,7 @@
-use crate::error::AppError;
+use crate::error::KernelError;
 use crate::middleware::req_body_extractors::RequestBodyExtractor;
+use crate::types::JsonValue;
 use bytes::Bytes;
-
-pub type JsonValue = serde_json::Value;
 
 #[derive(Default)]
 pub struct JsonExtractor {}
@@ -14,8 +13,8 @@ impl RequestBodyExtractor for JsonExtractor {
         content_type.starts_with("application/json")
     }
 
-    fn convert(&self, bytes: Bytes) -> Result<Self::Output, AppError> {
+    fn convert(&self, bytes: Bytes) -> Result<Self::Output, KernelError> {
         serde_json::from_slice::<JsonValue>(&bytes)
-            .map_err(|_| AppError::BodyExt(String::from("Invalid JSON")))
+            .map_err(|_| KernelError::BodyReadFailed(String::from("Invalid JSON")))
     }
 }

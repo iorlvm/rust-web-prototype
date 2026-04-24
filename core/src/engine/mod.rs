@@ -1,4 +1,4 @@
-use crate::error::{AppError, ErrorResponder};
+use crate::error::{ErrorDispatcher, KernelError};
 use crate::handler::{Handler, HandlerRegistry};
 use crate::http::{HttpRequest, HttpResponse, Request};
 use crate::middleware::Middleware;
@@ -10,7 +10,7 @@ pub struct Kernel<T: Send + Sync + 'static> {
     injected: Arc<T>,
     registry: HandlerRegistry,
     middleware: Vec<Box<dyn Middleware>>,
-    error_responder: ErrorResponder,
+    error_responder: ErrorDispatcher,
 }
 
 impl<T: Send + Sync + 'static> Kernel<T> {
@@ -18,7 +18,7 @@ impl<T: Send + Sync + 'static> Kernel<T> {
         injected: T,
         registry: HandlerRegistry,
         middleware: Vec<Box<dyn Middleware>>,
-        error_responder: ErrorResponder,
+        error_responder: ErrorDispatcher,
     ) -> Self {
         Self {
             injected: Arc::new(injected),
@@ -37,12 +37,15 @@ impl<T: Send + Sync + 'static> Kernel<T> {
 
                 request_chain(&mut req, handler, &self.middleware).await
             }
-            None => Err(AppError::NotFound(req.method().clone(), req.uri().clone())),
+            None => Err(KernelError::NotFound(
+                req.method().clone(),
+                req.uri().clone(),
+            )),
         };
 
         let resp = match result {
             Ok(resp) => resp,
-            Err(err) => self.error_responder.handle(err),
+            Err(err) => self.error_responder.dispatch(err),
         };
 
         Ok(resp.into_http_response())

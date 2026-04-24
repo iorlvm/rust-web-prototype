@@ -1,4 +1,4 @@
-use crate::error::AppError;
+use crate::error::KernelError;
 use crate::http::{Request, Response};
 use crate::middleware::Middleware;
 use crate::runtime::Endpoint;
@@ -21,9 +21,9 @@ pub async fn request_chain(
     req: &mut Request,
     endpoint: &dyn Endpoint,
     middleware: &[Box<dyn Middleware>],
-) -> Result<Response, AppError> {
+) -> Result<Response, KernelError> {
     let mut last: Option<usize> = None;
-    let mut result_opt: Option<Result<Response, AppError>> = None;
+    let mut result_opt: Option<Result<Response, KernelError>> = None;
 
     // before phase
     for (i, cur) in middleware.iter().enumerate() {

@@ -100,9 +100,11 @@ impl ResponseBuilder {
 
     pub fn json<T: Serialize>(self, json: T) -> Result<Response, serde_json::Error> {
         let json_str = serde_json::to_string(&json)?;
-        Ok(self
-            .header("Content-Type", "application/json; charset=utf-8")
-            .body(ResponseBody::Text(json_str)))
+        Ok(self.json_str(json_str))
+    }
+    pub fn json_str(self, json_str: String) -> Response {
+        self.header("Content-Type", "application/json; charset=utf-8")
+            .body(ResponseBody::Text(json_str))
     }
 
     pub fn bytes(self, bytes: Vec<u8>) -> Response {
