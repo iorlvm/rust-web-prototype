@@ -18,8 +18,8 @@ pub fn run() {
 
         let kernel = Arc::new(Kernel::new(
             (),
-            HandlerRegistryBuilder::new().build(),
-            KernelMiddlewareChainBuilder::new().build(),
+            HandlerRegistryBuilder::default().build(),
+            KernelMiddlewareChainBuilder::default().build(),
             ErrorResponder::new(),
         ));
         loop {

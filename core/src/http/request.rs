@@ -61,6 +61,10 @@ impl Request {
         self.http_req.headers().get_all(key).iter()
     }
 
+    pub fn content_type(&self) -> Option<&str> {
+        self.header("Content-Type").and_then(|v| v.to_str().ok())
+    }
+
     pub fn take_body(&mut self) -> Option<&mut Incoming> {
         if self.body_consumed {
             return None;

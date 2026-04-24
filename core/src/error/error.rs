@@ -1,10 +1,11 @@
 use crate::http::{Response, ResponseBuilder};
-use http::StatusCode;
+use http::{Method, StatusCode, Uri};
 
 // TODO: 目前顆粒度較粗, 待拓展
-pub struct AppError {
-    pub status: StatusCode,
-    pub message: String,
+pub enum AppError {
+    BodyExt(String),
+    NotFound(Method, Uri),
+    CustomError(String),
 }
 
 pub struct ErrorResponder {

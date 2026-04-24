@@ -12,16 +12,12 @@ impl HandlerRegistry {
     }
 }
 
+#[derive(Default)]
 pub struct HandlerRegistryBuilder {
     handlers: Vec<Handler>,
 }
 
 impl HandlerRegistryBuilder {
-    pub fn new() -> Self {
-        Self {
-            handlers: Vec::new(),
-        }
-    }
     pub fn register(mut self, handler: Handler) -> Self {
         self.handlers.push(handler);
         self

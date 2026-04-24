@@ -1,4 +1,4 @@
-use core::middleware::extensions::MultipartResolver;
+use core::middleware::req_body_extractors::*;
 use core::middleware::Middleware;
 
 pub struct KernelMiddlewareChainBuilder {
@@ -6,14 +6,19 @@ pub struct KernelMiddlewareChainBuilder {
     custom: Vec<Box<dyn Middleware>>,
 }
 
-impl KernelMiddlewareChainBuilder {
-    pub fn new() -> Self {
+impl Default for KernelMiddlewareChainBuilder {
+    fn default() -> Self {
         Self {
-            kernel: vec![Box::new(MultipartResolver::new())],
+            kernel: vec![
+                Box::new(MultipartExtractor::default()),
+                Box::new(JsonExtractor::default()),
+            ],
             custom: vec![],
         }
     }
+}
 
+impl KernelMiddlewareChainBuilder {
     pub fn add(mut self, middleware: impl Middleware + 'static) -> Self {
         self.custom.push(Box::new(middleware));
         self

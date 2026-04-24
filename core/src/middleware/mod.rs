@@ -1,4 +1,4 @@
-pub mod extensions;
+pub mod req_body_extractors;
 
 use crate::error::AppError;
 use crate::http::{Request, Response};
