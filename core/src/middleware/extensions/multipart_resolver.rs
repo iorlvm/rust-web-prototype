@@ -1,6 +1,6 @@
 use crate::error::AppError;
-use crate::filter::Filter;
 use crate::http::{Request, Response};
+use crate::middleware::Middleware;
 use async_trait::async_trait;
 
 pub type Multipart = Vec<Filed>;
@@ -21,7 +21,7 @@ impl MultipartResolver {
 }
 
 #[async_trait]
-impl Filter for MultipartResolver {
+impl Middleware for MultipartResolver {
     async fn before(&self, req: &mut Request) -> Result<Option<Response>, AppError> {
         Ok(None)
     }

@@ -1,9 +1,11 @@
+pub mod extensions;
+
 use crate::error::AppError;
 use crate::http::{Request, Response};
 use async_trait::async_trait;
 
 #[async_trait]
-pub trait Filter: Send + Sync {
+pub trait Middleware: Send + Sync {
     async fn before(&self, req: &mut Request) -> Result<Option<Response>, AppError>;
     async fn after(
         &self,
