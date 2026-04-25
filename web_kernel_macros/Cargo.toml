@@ -1,5 +1,5 @@
 [package]
-name = "macros"
+name = "web_kernel_macros"
 version = "0.1.0"
 edition = "2024"
 

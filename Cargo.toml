@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "app",
-    "boot",
-    "core",
-    "macros"
+    "web_kernel",
+    "web_kernel_macros"
 ]

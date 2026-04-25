@@ -8,19 +8,13 @@ pub struct ErrorDispatcher {
     external_handlers: Vec<Box<dyn ExternalErrorHandler>>,
 }
 
-impl Default for ErrorDispatcher {
-    fn default() -> Self {
-        Self::new(DefaultFrameworkErrorHandler::default(), vec![])
-    }
-}
-
 impl ErrorDispatcher {
     pub fn new(
-        framework_handler: impl FrameworkErrorHandler + 'static,
+        framework_handler: Box<dyn FrameworkErrorHandler>,
         external_handlers: Vec<Box<dyn ExternalErrorHandler>>,
     ) -> Self {
         Self {
-            framework_handler: Box::new(framework_handler),
+            framework_handler,
             external_handlers,
         }
     }

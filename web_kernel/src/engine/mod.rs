@@ -1,3 +1,5 @@
+pub mod factory;
+
 use crate::error::{ErrorDispatcher, KernelError};
 use crate::handler::{Handler, HandlerRegistry};
 use crate::http::{HttpRequest, HttpResponse, Request};
@@ -10,7 +12,7 @@ pub struct Kernel<T: Send + Sync + 'static> {
     injected: Arc<T>,
     registry: HandlerRegistry,
     middleware: Vec<Box<dyn Middleware>>,
-    error_responder: ErrorDispatcher,
+    error_dispatcher: ErrorDispatcher,
 }
 
 impl<T: Send + Sync + 'static> Kernel<T> {
@@ -24,7 +26,7 @@ impl<T: Send + Sync + 'static> Kernel<T> {
             injected: Arc::new(injected),
             registry,
             middleware,
-            error_responder,
+            error_dispatcher: error_responder,
         }
     }
     pub async fn handle(&self, req: HttpRequest) -> Result<HttpResponse, Infallible> {
@@ -45,7 +47,7 @@ impl<T: Send + Sync + 'static> Kernel<T> {
 
         let resp = match result {
             Ok(resp) => resp,
-            Err(err) => self.error_responder.dispatch(err),
+            Err(err) => self.error_dispatcher.dispatch(err),
         };
 
         Ok(resp.into_http_response())

@@ -18,10 +18,15 @@ pub struct HandlerRegistryBuilder {
 }
 
 impl HandlerRegistryBuilder {
+    pub fn new(handlers: Vec<Handler>) -> Self {
+        Self { handlers }
+    }
+
     pub fn register(mut self, handler: Handler) -> Self {
         self.handlers.push(handler);
         self
     }
+
     pub fn build(self) -> HandlerRegistry {
         let mut map: HashMap<Method, Vec<Handler>> = HashMap::new();
 
