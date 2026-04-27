@@ -1,0 +1,9 @@
+[package]
+name = "ioc_lite"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ioc_lite_macro = { path = "../ioc_lite_macro" }
+async-trait = "0.1"
+inventory = "0.3"

@@ -1,6 +1,8 @@
 [workspace]
 members = [
     "app",
+    "ioc_lite",
+    "ioc_lite_macro",
     "web_kernel",
-    "web_kernel_macros"
+    "web_kernel_macro"
 ]
