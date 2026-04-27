@@ -5,6 +5,8 @@ use crate::handler::{Handler, HandlerRegistry};
 use crate::http::{HttpRequest, HttpResponse, Request};
 use crate::middleware::Middleware;
 use crate::runtime::request_chain::request_chain;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -35,9 +37,11 @@ impl<T: Send + Sync + 'static> Kernel<T> {
         let result = match handler {
             Some(handler) => {
                 let mut req = Request::from(req);
-                req.insert(self.injected.clone());
 
-                request_chain(&mut req, handler, &self.middleware).await
+                let mut ctx = Context::default();
+                ctx.insert(self.injected.clone());
+
+                request_chain(&mut ctx, &mut req, handler, &self.middleware).await
             }
             None => Err(KernelError::NotFound(
                 req.method().clone(),
@@ -59,5 +63,28 @@ impl<T: Send + Sync + 'static> Kernel<T> {
                 .iter()
                 .find(|handler| handler.matches(method, path))
         })
+    }
+}
+
+#[derive(Default)]
+pub struct Context {
+    map: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+}
+
+impl Context {
+    pub fn insert<T: 'static + Send + Sync>(&mut self, value: T) {
+        self.map.insert(TypeId::of::<T>(), Box::new(value));
+    }
+
+    pub fn get<T: 'static>(&self) -> Option<&T> {
+        self.map
+            .get(&TypeId::of::<T>())
+            .and_then(|v| v.downcast_ref::<T>())
+    }
+
+    pub fn get_injected<T: Send + Sync + 'static>(&self) -> Arc<T> {
+        self.get::<Arc<T>>()
+            .cloned()
+            .expect("injected resource missing: check the requested type T")
     }
 }

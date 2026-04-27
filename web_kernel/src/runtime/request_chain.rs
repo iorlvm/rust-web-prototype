@@ -1,3 +1,4 @@
+use crate::engine::Context;
 use crate::error::KernelError;
 use crate::http::{Request, Response};
 use crate::middleware::Middleware;
@@ -18,6 +19,7 @@ use crate::runtime::Endpoint;
 ///
 /// 實作上以 index + reverse iteration 模擬 stack unwind。
 pub async fn request_chain(
+    ctx: &mut Context,
     req: &mut Request,
     endpoint: &dyn Endpoint,
     middleware: &[Box<dyn Middleware>],
@@ -29,7 +31,7 @@ pub async fn request_chain(
     for (i, cur) in middleware.iter().enumerate() {
         last = Some(i);
 
-        match cur.before(req).await {
+        match cur.before(ctx, req).await {
             Ok(Some(res)) => {
                 result_opt = Some(Ok(res));
                 break;
@@ -45,14 +47,14 @@ pub async fn request_chain(
     // handler phase
     let mut result = match result_opt {
         Some(res) => res,
-        None => endpoint.execute(req).await,
+        None => endpoint.execute(ctx, req).await,
     };
 
     // after phase
     if let Some(last) = last {
         for i in (0..=last).rev() {
             let cur = &middleware[i];
-            result = cur.after(req, result).await;
+            result = cur.after(ctx, req, result).await;
         }
     }
 

@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use http_body_util::BodyExt;
 
+use crate::engine::Context;
 pub use json_extractor::*;
 pub use multipart_extractor::*;
 
@@ -24,7 +25,11 @@ impl<T> Middleware for T
 where
     T: RequestBodyExtractor + Send + Sync,
 {
-    async fn before(&self, req: &mut Request) -> Result<Option<Response>, KernelError> {
+    async fn before(
+        &self,
+        ctx: &mut Context,
+        req: &mut Request,
+    ) -> Result<Option<Response>, KernelError> {
         let Some(content_type) = req.content_type() else {
             return Ok(None);
         };
@@ -45,14 +50,15 @@ where
             .to_bytes();
 
         let body = self.convert(bytes)?;
-        req.insert(body);
+        ctx.insert(body);
 
         Ok(None)
     }
 
     async fn after(
         &self,
-        _: &mut Request,
+        _: &mut Context,
+        _: &Request,
         result: Result<Response, KernelError>,
     ) -> Result<Response, KernelError> {
         result
