@@ -16,6 +16,9 @@ pub struct TestService {
 
     #[value = 123]
     num: i32,
+
+    #[script(async |_| vec![1, 2, 3])]
+    arr: Vec<i32>,
 }
 impl TestService {
     pub fn name(&self) -> String {
@@ -44,6 +47,7 @@ impl KernelFactory<IoC> for TestKernelFactory {
         println!("{}", ioc.get::<TestService>().name);
         println!("{}", ioc.get::<TestService>().name());
         println!("{}", ioc.get::<TestService2>().name());
+        println!("{:?}", ioc.get::<TestService>().arr);
 
         ioc
     }

@@ -111,6 +111,11 @@ fn expand_named_struct_component(
                     });
                 }
             }
+            FieldAttribute::Script(func) => {
+                field_initializers.push(quote! {
+                        #field_name: (#func)(ioc).await
+                });
+            }
         }
     }
 

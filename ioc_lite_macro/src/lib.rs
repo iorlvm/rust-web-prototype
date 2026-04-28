@@ -14,6 +14,7 @@ use syn::{parse_macro_input, DeriveInput};
 /// 3. 支援欄位注入：
 ///    - `#[component]`：從 IoC 取得依賴（必須為 Arc<T>）
 ///    - `#[value = "..."]`：常數注入
+///    - `#[script(async fn(ioc: &mut IoC) -> T)`：腳本注入
 ///    - 無標註：使用 Default
 /// 4. 自動註冊至 `inventory`
 ///
@@ -26,6 +27,9 @@ use syn::{parse_macro_input, DeriveInput};
 /// ## 使用範例
 /// ```rust
 /// #[derive(Component)]
+///
+/// async fn init_depend(ioc: &mut IoC) -> Vec<Depend> { ... }
+///
 /// struct Foo {
 ///     #[component]
 ///     service: Arc<Service>,
@@ -33,10 +37,13 @@ use syn::{parse_macro_input, DeriveInput};
 ///     #[value = "hello"]
 ///     name: String,
 ///
+///     #[script(init_depend)]
+///     depend: Vec<Depend>,
+///
 ///     cache: Cache, // Default::default()
 /// }
 /// ```
-#[proc_macro_derive(Component, attributes(component, value))]
+#[proc_macro_derive(Component, attributes(component, value, script))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 

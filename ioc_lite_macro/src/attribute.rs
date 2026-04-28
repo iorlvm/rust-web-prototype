@@ -11,6 +11,7 @@ use syn::{Attribute, Error, Expr, GenericArgument, Lit, Meta, PathArguments, Res
 pub enum FieldAttribute {
     Component,
     Value(Lit),
+    Script(Expr),
     None,
 }
 impl FieldAttribute {
@@ -25,10 +26,7 @@ pub fn get_field_attr(attrs: &[Attribute]) -> Result<FieldAttribute> {
     for attr in attrs {
         if attr.path().is_ident("component") {
             if flag.is_some() {
-                return Err(Error::new_spanned(
-                    attr,
-                    "duplicate #[component] or #[value] attribute",
-                ));
+                return Err(Error::new_spanned(attr, "duplicate attribute"));
             }
             match &attr.meta {
                 Meta::Path(_) => {
@@ -43,10 +41,7 @@ pub fn get_field_attr(attrs: &[Attribute]) -> Result<FieldAttribute> {
             }
         } else if attr.path().is_ident("value") {
             if flag.is_some() {
-                return Err(Error::new_spanned(
-                    attr,
-                    "duplicate #[component] or #[value] attribute",
-                ));
+                return Err(Error::new_spanned(attr, "duplicate attribute"));
             }
             match &attr.meta {
                 Meta::NameValue(nv) => {
@@ -63,6 +58,19 @@ pub fn get_field_attr(attrs: &[Attribute]) -> Result<FieldAttribute> {
                     return Err(Error::new_spanned(attr, "expected #[value = ...]"));
                 }
             }
+        } else if attr.path().is_ident("script") {
+            if flag.is_some() {
+                return Err(Error::new_spanned(attr, "duplicate attribute"));
+            }
+
+            let expr = match &attr.meta {
+                Meta::List(_) => attr.parse_args::<Expr>()?,
+                _ => {
+                    return Err(Error::new_spanned(attr, "expected #[script(fn)]"));
+                }
+            };
+
+            flag = FieldAttribute::Script(expr);
         }
     }
 
