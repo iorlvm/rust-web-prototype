@@ -10,3 +10,4 @@ inventory = "0.3"
 
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
+http = "1.4.0"

@@ -13,6 +13,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "http",
  "inventory",
  "ioc_lite",
  "tokio",
@@ -654,15 +655,23 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "inventory",
  "serde",
  "serde_json",
  "tokio",
  "uuid",
+ "web_kernel_macro",
 ]
 
 [[package]]
 name = "web_kernel_macro"
 version = "0.1.0"
+dependencies = [
+ "http",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "windows-link"

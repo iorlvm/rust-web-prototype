@@ -47,7 +47,7 @@ use syn::{parse_macro_input, DeriveInput};
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match crate::expand::expand_component(input) {
+    match expand::expand_component(input) {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }

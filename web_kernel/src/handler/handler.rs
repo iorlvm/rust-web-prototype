@@ -9,7 +9,7 @@ use http::Method;
 
 pub struct Handler {
     method: Method,
-    path_pattern: String,
+    route: String,
     endpoint: Box<dyn Endpoint>,
     middleware: Vec<Box<dyn Middleware>>,
 }
@@ -17,13 +17,13 @@ pub struct Handler {
 impl Handler {
     pub fn new(
         method: Method,
-        path_pattern: String,
+        route: String,
         endpoint: Box<dyn Endpoint>,
         middleware: Vec<Box<dyn Middleware>>,
     ) -> Self {
         Self {
             method,
-            path_pattern,
+            route,
             endpoint,
             middleware,
         }
@@ -33,13 +33,13 @@ impl Handler {
         &self.method
     }
 
-    pub fn path_pattern(&self) -> &str {
-        &self.path_pattern
+    pub fn route(&self) -> &str {
+        &self.route
     }
 
     pub fn matches(&self, method: &Method, path: &str) -> bool {
         // TODO: Implement path pattern matching logic
-        self.method == method && self.path_pattern == path
+        self.method == method && self.route == path
     }
 }
 

@@ -7,6 +7,10 @@ pub mod http;
 pub mod middleware;
 pub mod types;
 
+pub use async_trait::async_trait;
+pub use runtime::Endpoint;
+pub use web_kernel_macro::handler;
+
 use hyper_util::rt::TokioIo;
 use std::sync::Arc;
 use tokio::net::TcpListener;

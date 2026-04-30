@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+web_kernel_macro = { path = "../web_kernel_macro" }
+
 async-trait = "0.1"
 
 tokio = { version = "1", features = ["full"] }
@@ -17,3 +19,4 @@ bytes = "1"
 serde = "1.0.228"
 serde_json = "1.0.149"
 uuid = { version = "1.23.1", features = ["v7"] }
+inventory = "0.3.24"

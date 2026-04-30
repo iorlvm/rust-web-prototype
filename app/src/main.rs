@@ -1,38 +1,29 @@
+mod middleware;
+mod service;
+
 use async_trait::async_trait;
-use ioc_lite::{Component, IoC};
-use std::sync::Arc;
+use ioc_lite::IoC;
+use middleware::TestMiddlewareForShortcut;
+use service::{TestService, TestService2};
 use tokio::net::TcpListener;
 use web_kernel::engine::factory::KernelFactory;
-use web_kernel::handler::Handler;
-use web_kernel::run;
+use web_kernel::engine::Context;
+use web_kernel::error::KernelError;
+use web_kernel::http::{Request, Response, ResponseBuilder};
+use web_kernel::{handler, run};
 
-#[derive(Component)]
-pub struct TestService {
-    #[component]
-    test: Arc<TestService2>,
-
-    #[value = "test"]
-    pub name: String,
-
-    #[value = 123]
-    num: i32,
-
-    #[script(async |_| vec![1, 2, 3])]
-    arr: Vec<i32>,
-}
-impl TestService {
-    pub fn name(&self) -> String {
-        self.test.name().to_string()
-    }
+#[handler(
+    method = "GET",
+    route = "/test",
+    middleware(TestMiddlewareForShortcut::default())
+)]
+pub async fn test_handler(_: &mut Context, _: &mut Request) -> Result<Response, KernelError> {
+    Ok(ResponseBuilder::new().text("OK".to_string()))
 }
 
-#[derive(Component)]
-pub struct TestService2;
-
-impl TestService2 {
-    pub fn name(&self) -> String {
-        "test2".to_string()
-    }
+#[handler(method = "GET", route = "/test2")]
+pub async fn test_handler2(_: &mut Context, _: &mut Request) -> Result<Response, KernelError> {
+    Err(KernelError::BodyReadFailed("failed at Handler".to_string()))
 }
 
 #[derive(Default)]
@@ -50,10 +41,6 @@ impl KernelFactory<IoC> for TestKernelFactory {
         println!("{:?}", ioc.get::<TestService>().arr);
 
         ioc
-    }
-
-    fn handlers(&self) -> Vec<Handler> {
-        vec![]
     }
 }
 
