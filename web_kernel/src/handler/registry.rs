@@ -7,8 +7,12 @@ pub struct HandlerRegistry {
 }
 
 impl HandlerRegistry {
-    pub fn get_handlers(&self, method: &Method) -> Option<&[Handler]> {
-        self.method_map.get(method).map(Vec::as_slice)
+    pub fn find_handler(&self, method: &Method, path: &str) -> Option<&Handler> {
+        self.method_map.get(method).and_then(|handlers| {
+            handlers
+                .iter()
+                .find(|handler| handler.matches(method, path))
+        })
     }
 }
 

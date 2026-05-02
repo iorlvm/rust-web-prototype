@@ -1,7 +1,7 @@
 pub mod factory;
 
 use crate::error::{ErrorDispatcher, KernelError};
-use crate::handler::{Handler, HandlerRegistry};
+use crate::handler::HandlerRegistry;
 use crate::http::{HttpRequest, HttpResponse, Request};
 use crate::middleware::Middleware;
 use crate::runtime::request_chain::request_chain;
@@ -32,7 +32,7 @@ impl<T: Send + Sync + 'static> Kernel<T> {
         }
     }
     pub async fn handle(&self, req: HttpRequest) -> Result<HttpResponse, Infallible> {
-        let handler = self.find_handler(req.method(), req.uri().path());
+        let handler = self.registry.find_handler(req.method(), req.uri().path());
 
         let result = match handler {
             Some(handler) => {
@@ -55,14 +55,6 @@ impl<T: Send + Sync + 'static> Kernel<T> {
         };
 
         Ok(resp.into_http_response())
-    }
-
-    fn find_handler(&self, method: &http::Method, path: &str) -> Option<&Handler> {
-        self.registry.get_handlers(method).and_then(|handlers| {
-            handlers
-                .iter()
-                .find(|handler| handler.matches(method, path))
-        })
     }
 }
 
