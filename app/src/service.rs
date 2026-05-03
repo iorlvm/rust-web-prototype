@@ -2,6 +2,7 @@ use ioc_lite::Component;
 use std::sync::Arc;
 
 #[derive(Component)]
+#[prototype]
 pub struct TestService {
     #[component]
     test: Arc<TestService2>,
@@ -12,7 +13,7 @@ pub struct TestService {
     #[value = 123]
     pub num: i32,
 
-    #[script(async |_| vec![1, 2, 3])]
+    #[script(async || vec![1, 2, 3])]
     pub arr: Vec<i32>,
 }
 impl TestService {

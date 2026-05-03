@@ -7,35 +7,70 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-pub type ComponentInstance = Arc<dyn Any + Send + Sync>;
-
-pub type ComponentCreateFuture<'a> = Pin<Box<dyn Future<Output = ComponentInstance> + Send + 'a>>;
-
-pub type ComponentCreateFn = for<'a> fn(&'a mut IoC) -> ComponentCreateFuture<'a>;
+// ==========================
+// Singleton
+// ==========================
+pub type SingletonInstance = Arc<dyn Any + Send + Sync>;
+pub type SingletonCreateFuture<'a> = Pin<Box<dyn Future<Output = SingletonInstance> + Send + 'a>>;
+pub type SingletonCreateFn = for<'a> fn(&'a mut IoC) -> SingletonCreateFuture<'a>;
 
 #[async_trait]
-pub trait Component: Send + Sync + 'static {
+pub trait Singleton: Send + Sync + 'static {
     async fn create(ioc: &mut IoC) -> Self;
 }
 
-pub struct ComponentRegistration {
+pub struct SingletonRegistration {
     pub type_id: fn() -> TypeId,
-    pub create: ComponentCreateFn,
+    pub create: SingletonCreateFn,
 }
 
-inventory::collect!(ComponentRegistration);
+inventory::collect!(SingletonRegistration);
+fn registered_singleton() -> Vec<&'static SingletonRegistration> {
+    inventory::iter::<SingletonRegistration>
+        .into_iter()
+        .collect()
+}
 
-pub fn registered_components() -> Vec<&'static ComponentRegistration> {
-    inventory::iter::<ComponentRegistration>
+// ==========================
+// Prototype
+// ==========================
+
+pub type PrototypeInstance = Box<dyn Any + Send + Sync>;
+
+pub type PrototypeCreateFuture<'a> = Pin<Box<dyn Future<Output = PrototypeInstance> + Send + 'a>>;
+
+pub type PrototypeCreateFn = for<'a> fn(&'a mut IoC) -> PrototypeCreateFuture<'a>;
+
+#[async_trait]
+pub trait Prototype: Send + Sync + 'static {
+    // build-time：允許修改 IoC（只在初始化階段使用）
+    async fn build_time_create(ioc: &mut IoC) -> Self;
+
+    // runtime：只讀 IoC（正常使用）
+    async fn create(ioc: &IoC) -> Self;
+}
+
+pub struct PrototypeRegistration {
+    pub type_id: fn() -> TypeId,
+    pub create: PrototypeCreateFn,
+}
+
+inventory::collect!(PrototypeRegistration);
+
+pub fn registered_prototype() -> Vec<&'static PrototypeRegistration> {
+    inventory::iter::<PrototypeRegistration>
         .into_iter()
         .collect()
 }
 
 pub struct IoC {
-    map: HashMap<TypeId, ComponentInstance>,
+    map: HashMap<TypeId, SingletonInstance>,
     constructing: HashSet<TypeId>,
 }
 
+// ==========================
+// IoC
+// ==========================
 impl IoC {
     pub async fn new() -> Self {
         let mut instance = Self {
@@ -43,12 +78,18 @@ impl IoC {
             constructing: HashSet::new(),
         };
 
-        for registration in registered_components() {
-            let key = (registration.type_id)();
+        // prototype build-time check
+        for prototype in registered_prototype() {
+            let _ = (prototype.create)(&mut instance).await;
+        }
+
+        // build singleton graph
+        for singleton in registered_singleton() {
+            let key = (singleton.type_id)();
 
             if !instance.map.contains_key(&key) {
                 instance.constructing.insert(key);
-                let component = (registration.create)(&mut instance).await;
+                let component = (singleton.create)(&mut instance).await;
                 instance.map.insert(key, component);
                 instance.constructing.remove(&key);
             }
@@ -59,7 +100,7 @@ impl IoC {
 
     pub fn get<T>(&self) -> Arc<T>
     where
-        T: Component,
+        T: Singleton,
     {
         let value = self
             .map
@@ -70,9 +111,23 @@ impl IoC {
         value.downcast::<T>().expect("component type mismatch")
     }
 
-    pub async fn get_or_insert<T>(&mut self) -> Arc<T>
+    pub async fn create<T>(&self) -> T
     where
-        T: Component,
+        T: Prototype,
+    {
+        T::create(self).await
+    }
+
+    pub async fn build_time_prototype<T>(&mut self) -> T
+    where
+        T: Prototype,
+    {
+        T::build_time_create(self).await
+    }
+
+    pub async fn build_time_singleton<T>(&mut self) -> Arc<T>
+    where
+        T: Singleton,
     {
         let key = TypeId::of::<T>();
 

@@ -34,11 +34,13 @@ impl KernelFactory<IoC> for TestKernelFactory {
     async fn build_injected(&self) -> IoC {
         let ioc = IoC::new().await;
 
-        println!("{}", ioc.get::<TestService>().num);
-        println!("{}", ioc.get::<TestService>().name);
-        println!("{}", ioc.get::<TestService>().name());
+        let service = ioc.create::<TestService>().await;
+
+        println!("{}", service.num);
+        println!("{}", service.name);
+        println!("{}", service.name());
         println!("{}", ioc.get::<TestService2>().name());
-        println!("{:?}", ioc.get::<TestService>().arr);
+        println!("{:?}", service.arr);
 
         ioc
     }

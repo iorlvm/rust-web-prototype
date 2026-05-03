@@ -17,7 +17,7 @@ impl Middleware for TestMiddlewareForShortcut {
     ) -> Result<Option<Response>, KernelError> {
         let ioc = ctx.get_injected::<IoC>();
 
-        let service = ioc.get::<TestService>();
+        let service = ioc.create::<TestService>().await;
         println!("{}", service.num);
 
         println!("shortcut_before");
