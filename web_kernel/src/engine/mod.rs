@@ -68,6 +68,10 @@ impl Context {
         self.map.insert(TypeId::of::<T>(), Box::new(value));
     }
 
+    pub fn remove<T: 'static + Send + Sync>(&mut self) {
+        self.map.remove(&TypeId::of::<T>());
+    }
+
     pub fn get<T: 'static>(&self) -> Option<&T> {
         self.map
             .get(&TypeId::of::<T>())
