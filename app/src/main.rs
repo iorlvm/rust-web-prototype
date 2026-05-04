@@ -2,7 +2,7 @@ mod middleware;
 mod service;
 
 use async_trait::async_trait;
-use ioc_lite::IoC;
+use ioc_lite::{IoC, IoCBuilder};
 use middleware::TestMiddlewareForShortcut;
 use service::{TestService, TestService2};
 use tokio::net::TcpListener;
@@ -32,14 +32,15 @@ pub struct TestKernelFactory {}
 #[async_trait]
 impl KernelFactory<IoC> for TestKernelFactory {
     async fn build_injected(&self) -> IoC {
-        let ioc = IoC::new().await;
+        let ioc = IoCBuilder::new().build();
 
-        let service = ioc.create::<TestService>().await;
+        let service = ioc.get::<TestService>().await;
+        let service = service.read().await;
 
         println!("{}", service.num);
         println!("{}", service.name);
-        println!("{}", service.name());
-        println!("{}", ioc.get::<TestService2>().name());
+        println!("{}", service.name().await);
+        println!("{}", ioc.get::<TestService2>().await.read().await.name());
         println!("{:?}", service.arr);
 
         ioc

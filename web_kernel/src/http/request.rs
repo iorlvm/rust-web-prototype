@@ -34,7 +34,7 @@ impl Request {
         self.http_req.headers().get(key)
     }
 
-    pub fn headers(&self, key: &str) -> impl Iterator<Item = &HeaderValue> {
+    pub fn headers(&self, key: &str) -> impl Iterator<Item=&HeaderValue> {
         self.http_req.headers().get_all(key).iter()
     }
 

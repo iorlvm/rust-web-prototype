@@ -1,4 +1,4 @@
-use crate::service::TestService;
+use crate::service::TestService2;
 use async_trait::async_trait;
 use ioc_lite::IoC;
 use web_kernel::engine::Context;
@@ -17,8 +17,7 @@ impl Middleware for TestMiddlewareForShortcut {
     ) -> Result<Option<Response>, KernelError> {
         let ioc = ctx.get_injected::<IoC>();
 
-        let service = ioc.create::<TestService>().await;
-        println!("{}", service.num);
+        println!("{}", ioc.get::<TestService2>().await.read().await.name());
 
         println!("shortcut_before");
         Err(KernelError::BodyReadFailed(

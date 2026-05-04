@@ -26,12 +26,12 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 /// ## 使用範例
 /// ```rust
-/// async fn init_depend() -> Vec<Depend> { ... }
+/// async fn init_depend(ioc: IoC) -> Vec<Depend> { ... }
 ///
 /// #[derive(Component)]
-/// #[prototype]  // 指定為 prototype (可選)
+/// #[scope = "prototype"]  // 指定為 singleton (預設) | prototype
 /// struct Foo {
-///     #[component] // Singleton 的類型只能是 Arc<T>
+///     #[component] // singleton 的類型只能是 Arc<T>
 ///     service: Arc<Service>,
 ///
 ///     #[component] // prototype 只能是 T
@@ -43,13 +43,13 @@ use syn::{parse_macro_input, DeriveInput};
 ///     #[script(init_depend)]
 ///     depend: Vec<Depend>,
 ///
-///     #[script(async || vec![1, 2, 3])]
+///     #[script(async |_| vec![1, 2, 3])]
 ///     arr: Vec<i32>,
 ///
 ///     cache: Cache, // Default::default()
 /// }
 /// ```
-#[proc_macro_derive(Component, attributes(component, value, script, prototype))]
+#[proc_macro_derive(Component, attributes(component, value, script, scope))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 

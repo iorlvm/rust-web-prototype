@@ -2,146 +2,142 @@ pub use async_trait::async_trait;
 pub use ioc_lite_macro::Component;
 
 use std::any::{Any, TypeId};
-use std::collections::{HashMap, HashSet};
-use std::future::Future;
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
-// ==========================
-// Singleton
-// ==========================
-pub type SingletonInstance = Arc<dyn Any + Send + Sync>;
-pub type SingletonCreateFuture<'a> = Pin<Box<dyn Future<Output = SingletonInstance> + Send + 'a>>;
-pub type SingletonCreateFn = for<'a> fn(&'a mut IoC) -> SingletonCreateFuture<'a>;
+type Object = Box<dyn Any + Send + Sync>;
+pub type Shared<T> = Arc<RwLock<T>>;
+pub type Bean<T> = Shared<Box<T>>;
 
-#[async_trait]
-pub trait Singleton: Send + Sync + 'static {
-    async fn create(ioc: &mut IoC) -> Self;
+type LifecycleScopeInstance = Shared<dyn LifecycleScope>;
+type ComponentFactory = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Object> + Send>> + Send + Sync>;
+
+inventory::collect!(ComponentRegistration);
+pub struct ComponentRegistration {
+    pub register: fn(builder: &mut IoCBuilder) -> (),
 }
-
-pub struct SingletonRegistration {
-    pub type_id: fn() -> TypeId,
-    pub create: SingletonCreateFn,
+pub struct IoCBuilder {
+    map: HashMap<TypeId, LifecycleScopeInstance>,
 }
+impl IoCBuilder {
+    pub fn new() -> Self {
+        let mut builder = Self {
+            map: HashMap::new(),
+        };
 
-inventory::collect!(SingletonRegistration);
-fn registered_singleton() -> Vec<&'static SingletonRegistration> {
-    inventory::iter::<SingletonRegistration>
-        .into_iter()
-        .collect()
-}
+        inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .for_each(|reg| (reg.register)(&mut builder));
 
-// ==========================
-// Prototype
-// ==========================
+        builder
+    }
 
-pub type PrototypeInstance = Box<dyn Any + Send + Sync>;
+    pub fn register<T>(&mut self, scope: impl LifecycleScope)
+    where
+        T: Component,
+    {
+        self.map
+            .insert(TypeId::of::<T>(), Arc::new(RwLock::new(scope)));
+    }
 
-pub type PrototypeCreateFuture<'a> = Pin<Box<dyn Future<Output = PrototypeInstance> + Send + 'a>>;
-
-pub type PrototypeCreateFn = for<'a> fn(&'a mut IoC) -> PrototypeCreateFuture<'a>;
-
-#[async_trait]
-pub trait Prototype: Send + Sync + 'static {
-    // build-time：允許修改 IoC（只在初始化階段使用）
-    async fn build_time_create(ioc: &mut IoC) -> Self;
-
-    // runtime：只讀 IoC（正常使用）
-    async fn create(ioc: &IoC) -> Self;
-}
-
-pub struct PrototypeRegistration {
-    pub type_id: fn() -> TypeId,
-    pub create: PrototypeCreateFn,
-}
-
-inventory::collect!(PrototypeRegistration);
-
-pub fn registered_prototype() -> Vec<&'static PrototypeRegistration> {
-    inventory::iter::<PrototypeRegistration>
-        .into_iter()
-        .collect()
+    pub fn build(self) -> IoC {
+        IoC {
+            map: Arc::new(self.map),
+        }
+    }
 }
 
 pub struct IoC {
-    map: HashMap<TypeId, SingletonInstance>,
-    constructing: HashSet<TypeId>,
+    map: Arc<HashMap<TypeId, LifecycleScopeInstance>>,
 }
 
-// ==========================
-// IoC
-// ==========================
-impl IoC {
-    pub async fn new() -> Self {
-        let mut instance = Self {
-            map: HashMap::new(),
-            constructing: HashSet::new(),
-        };
-
-        // prototype build-time check
-        for prototype in registered_prototype() {
-            let _ = (prototype.create)(&mut instance).await;
+impl Clone for IoC {
+    fn clone(&self) -> Self {
+        Self {
+            map: self.map.clone(),
         }
-
-        // build singleton graph
-        for singleton in registered_singleton() {
-            let key = (singleton.type_id)();
-
-            if !instance.map.contains_key(&key) {
-                instance.constructing.insert(key);
-                let component = (singleton.create)(&mut instance).await;
-                instance.map.insert(key, component);
-                instance.constructing.remove(&key);
-            }
-        }
-
-        instance
     }
+}
 
-    pub fn get<T>(&self) -> Arc<T>
+impl IoC {
+    pub async fn get<T>(&self) -> Bean<T>
     where
-        T: Singleton,
+        T: Component,
     {
-        let value = self
+        let scope = self
             .map
             .get(&TypeId::of::<T>())
-            .cloned()
-            .expect("component not found");
+            .expect("component not registered");
 
-        value.downcast::<T>().expect("component type mismatch")
-    }
+        let ioc = self.clone();
+        let factory: ComponentFactory = Arc::new(move || {
+            let ioc = ioc.clone();
+            Box::pin(async move { Box::new(T::create(ioc).await) as Object })
+        });
 
-    pub async fn create<T>(&self) -> T
-    where
-        T: Prototype,
-    {
-        T::create(self).await
-    }
+        let hit = { scope.read().await.peek(&factory).await };
 
-    pub async fn build_time_prototype<T>(&mut self) -> T
-    where
-        T: Prototype,
-    {
-        T::build_time_create(self).await
-    }
-
-    pub async fn build_time_singleton<T>(&mut self) -> Arc<T>
-    where
-        T: Singleton,
-    {
-        let key = TypeId::of::<T>();
-
-        if !self.map.contains_key(&key) {
-            if self.constructing.contains(&key) {
-                panic!("IoC failed: circular dependency detected");
+        let instance = match hit {
+            Some(instance) => instance,
+            None => {
+                let mut scope = scope.write().await;
+                scope.resolve(&factory).await
             }
+        };
 
-            self.constructing.insert(key);
-            let component = T::create(self).await;
-            self.map.insert(key, Arc::new(component));
-            self.constructing.remove(&key);
+        let instance: Bean<T> = unsafe { std::mem::transmute(instance) };
+
+        instance.clone()
+    }
+}
+
+#[async_trait]
+pub trait Component: Send + Sync + 'static {
+    async fn create(ioc: IoC) -> Self;
+}
+
+#[async_trait]
+pub trait LifecycleScope: Send + Sync + 'static {
+    async fn peek(&self, factory: &ComponentFactory) -> Option<Shared<Object>>;
+
+    async fn resolve(&mut self, factory: &ComponentFactory) -> Shared<Object>;
+}
+
+#[derive(Default)]
+pub struct PrototypeScope;
+#[async_trait]
+impl LifecycleScope for PrototypeScope {
+    async fn peek(&self, factory: &ComponentFactory) -> Option<Shared<Object>> {
+        Some(Arc::new(RwLock::new(factory().await)))
+    }
+
+    async fn resolve(&mut self, _: &ComponentFactory) -> Shared<Object> {
+        unreachable!()
+    }
+}
+
+#[derive(Default)]
+pub struct SingletonScope {
+    instance: Option<Shared<Object>>,
+}
+
+#[async_trait]
+impl LifecycleScope for SingletonScope {
+    async fn peek(&self, _: &ComponentFactory) -> Option<Shared<Object>> {
+        self.instance.clone()
+    }
+
+    async fn resolve(&mut self, factory: &ComponentFactory) -> Shared<Object> {
+        if let Some(instance) = &self.instance {
+            return instance.clone();
         }
 
-        self.get::<T>()
+        let obj = factory().await;
+        let instance = Arc::new(RwLock::new(obj));
+        self.instance = Some(instance.clone());
+
+        instance
     }
 }

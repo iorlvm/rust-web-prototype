@@ -1,11 +1,10 @@
-use ioc_lite::Component;
-use std::sync::Arc;
+use ioc_lite::{Bean, Component};
 
 #[derive(Component)]
-#[prototype]
+#[scope = "prototype"]
 pub struct TestService {
     #[component]
-    test: Arc<TestService2>,
+    test: Bean<TestService2>,
 
     #[value = "test"]
     pub name: String,
@@ -13,12 +12,12 @@ pub struct TestService {
     #[value = 123]
     pub num: i32,
 
-    #[script(async || vec![1, 2, 3])]
+    #[script(async |_| vec![1, 2, 3])]
     pub arr: Vec<i32>,
 }
 impl TestService {
-    pub fn name(&self) -> String {
-        self.test.name().to_string()
+    pub async fn name(&self) -> String {
+        self.test.read().await.name().to_string()
     }
 }
 
