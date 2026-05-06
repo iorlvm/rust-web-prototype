@@ -185,22 +185,37 @@ fn expand_unit_struct_component(
 fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_macro2::TokenStream {
     let scope_token = match scope {
         Scope::Prototype => quote! { ::ioc_lite::PrototypeScope::default() },
-        Scope::Singleton => quote! { ::ioc_lite::SingletonScope::default() },
+        Scope::Singleton(mode) => match mode {
+            InitMode::Eager => quote! { ::ioc_lite::SingletonScope::eager() },
+            InitMode::Lazy => quote! { ::ioc_lite::SingletonScope::lazy() },
+        },
     };
 
     quote! {
         ::inventory::submit! {
             ::ioc_lite::ComponentRegistration {
                 register: |builder| {
-                    builder.register::<#struct_name>(#scope_token);
+                    builder.register::<#struct_name>(
+                        |ioc| {
+                            Box::pin(async move {
+                                let _ = ioc.get::<#struct_name>().await;
+                            })
+                        },
+                        #scope_token
+                    );
                 },
             }
         }
     }
 }
 
+enum InitMode {
+    Eager,
+    Lazy,
+}
+
 enum Scope {
-    Singleton,
+    Singleton(InitMode),
     Prototype,
 }
 
@@ -226,11 +241,12 @@ fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
         })
         .map(|v| match v.as_str() {
             "prototype" => Ok(Scope::Prototype),
-            "singleton" => Ok(Scope::Singleton),
+            "singleton" => Ok(Scope::Singleton(InitMode::Eager)),
+            "lazy_singleton" => Ok(Scope::Singleton(InitMode::Lazy)),
             _ => Err(Error::new_spanned(
                 v,
-                "invalid scope, expected 'singleton' or 'prototype'",
+                "invalid scope, expected 'singleton'|'lazy_singleton'|'prototype'",
             )),
         })
-        .unwrap_or(Ok(Scope::Singleton))
+        .unwrap_or(Ok(Scope::Singleton(InitMode::Eager)))
 }

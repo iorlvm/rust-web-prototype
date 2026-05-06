@@ -22,6 +22,7 @@ impl TestService {
 }
 
 #[derive(Component)]
+#[scope = "lazy_singleton"]
 pub struct TestService2;
 
 impl TestService2 {

@@ -1,25 +1,27 @@
+mod lifecycle;
+mod types;
+
 pub use async_trait::async_trait;
 pub use ioc_lite_macro::Component;
+pub use lifecycle::*;
+pub use types::*;
 
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-type Object = Box<dyn Any + Send + Sync>;
-pub type Shared<T> = Arc<RwLock<T>>;
-pub type Bean<T> = Shared<Box<T>>;
-
-type LifecycleScopeInstance = Shared<dyn LifecycleScope>;
-type ComponentFactory = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Object> + Send>> + Send + Sync>;
-
+// 自動註冊機制
 inventory::collect!(ComponentRegistration);
 pub struct ComponentRegistration {
     pub register: fn(builder: &mut IoCBuilder) -> (),
 }
+
+type Item = (String, LifecycleScopeInstance, ComponentInitTrigger);
+
+// 將 register 與 runtime 分離, 降低資源管理複雜度
 pub struct IoCBuilder {
-    map: HashMap<TypeId, LifecycleScopeInstance>,
+    map: HashMap<TypeId, Item>,
 }
 impl IoCBuilder {
     pub fn new() -> Self {
@@ -34,23 +36,31 @@ impl IoCBuilder {
         builder
     }
 
-    pub fn register<T>(&mut self, scope: impl LifecycleScope)
+    pub fn register<T>(&mut self, init_trigger: ComponentInitTrigger, scope: impl LifecycleScope)
     where
         T: Component,
     {
-        self.map
-            .insert(TypeId::of::<T>(), Arc::new(RwLock::new(scope)));
+        self.map.insert(
+            TypeId::of::<T>(),
+            (
+                std::any::type_name::<T>().to_string(),
+                Arc::new(RwLock::new(scope)),
+                init_trigger,
+            ),
+        );
     }
 
-    pub fn build(self) -> IoC {
-        IoC {
+    pub async fn build(self) -> IoC {
+        let ioc = IoC {
             map: Arc::new(self.map),
-        }
+        };
+        ioc.on_build().await;
+        ioc
     }
 }
 
 pub struct IoC {
-    map: Arc<HashMap<TypeId, LifecycleScopeInstance>>,
+    map: Arc<HashMap<TypeId, Item>>,
 }
 
 impl Clone for IoC {
@@ -66,7 +76,7 @@ impl IoC {
     where
         T: Component,
     {
-        let scope = self
+        let (_, scope, _) = self
             .map
             .get(&TypeId::of::<T>())
             .expect("component not registered");
@@ -91,53 +101,50 @@ impl IoC {
 
         instance.clone()
     }
+
+    // test script
+    pub async fn run_test(&self) {
+        println!("Running test script...");
+        for (name, scope, init_trigger) in self.map.values() {
+            self.handle_action(Action::Trigger, scope, init_trigger)
+                .await;
+            println!("- Triggered: {}", name)
+        }
+        for (name, scope, init_trigger) in self.map.values() {
+            self.handle_action(Action::Destroy, scope, init_trigger)
+                .await;
+            println!("- Destroyed: {}", name)
+        }
+        println!("Test script finished");
+
+        println!("Rebuilding IoC...");
+        self.on_build().await;
+    }
+
+    // hooks
+    async fn on_build(&self) {
+        for (_, scope, init_trigger) in self.map.values() {
+            let action = { scope.read().await.on_build() };
+            self.handle_action(action, scope, init_trigger).await;
+        }
+    }
+
+    // utils
+    async fn handle_action(
+        &self,
+        action: Action,
+        scope: &LifecycleScopeInstance,
+        init_trigger: &ComponentInitTrigger,
+    ) {
+        match action {
+            Action::Trigger => init_trigger(self.clone()).await,
+            Action::Destroy => scope.write().await.destroy().await,
+            Action::None => (),
+        }
+    }
 }
 
 #[async_trait]
 pub trait Component: Send + Sync + 'static {
     async fn create(ioc: IoC) -> Self;
-}
-
-#[async_trait]
-pub trait LifecycleScope: Send + Sync + 'static {
-    async fn peek(&self, factory: &ComponentFactory) -> Option<Shared<Object>>;
-
-    async fn resolve(&mut self, factory: &ComponentFactory) -> Shared<Object>;
-}
-
-#[derive(Default)]
-pub struct PrototypeScope;
-#[async_trait]
-impl LifecycleScope for PrototypeScope {
-    async fn peek(&self, factory: &ComponentFactory) -> Option<Shared<Object>> {
-        Some(Arc::new(RwLock::new(factory().await)))
-    }
-
-    async fn resolve(&mut self, _: &ComponentFactory) -> Shared<Object> {
-        unreachable!()
-    }
-}
-
-#[derive(Default)]
-pub struct SingletonScope {
-    instance: Option<Shared<Object>>,
-}
-
-#[async_trait]
-impl LifecycleScope for SingletonScope {
-    async fn peek(&self, _: &ComponentFactory) -> Option<Shared<Object>> {
-        self.instance.clone()
-    }
-
-    async fn resolve(&mut self, factory: &ComponentFactory) -> Shared<Object> {
-        if let Some(instance) = &self.instance {
-            return instance.clone();
-        }
-
-        let obj = factory().await;
-        let instance = Arc::new(RwLock::new(obj));
-        self.instance = Some(instance.clone());
-
-        instance
-    }
 }

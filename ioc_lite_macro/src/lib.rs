@@ -9,12 +9,12 @@ use syn::{parse_macro_input, DeriveInput};
 /// 提供 `#[derive(Component)]` 自動生成 IoC 元件註冊與建構邏輯。
 ///
 /// ## 功能
-/// 1. 自動實作 `ioc_lite::Singleton` 或 `ioc_lite::Prototype` trait
+/// 1. 自動實作 `ioc_lite::Component` trait
 /// 2. 自動生成 `create(ioc_lite)` 建構函式
 /// 3. 支援欄位注入：
-///    - `#[component]`：從 IoC 取得依賴（必須為 Arc<T>）
+///    - `#[component]`：從 IoC 取得依賴（必須為 Bean<T>）
 ///    - `#[value = "..."]`：常數注入
-///    - `#[script(async fn() -> T)`：腳本注入
+///    - `#[script(async fn(ioc) -> T)`：腳本注入
 ///    - 無標註：使用 Default
 /// 4. 自動註冊至 `inventory`
 ///
@@ -22,20 +22,17 @@ use syn::{parse_macro_input, DeriveInput};
 /// - 僅支援 struct
 /// - 不支援 generic struct
 /// - 不支援 tuple / unnamed struct
-/// - component 欄位必須為 `Arc<T>`
+/// - component 欄位必須為 `Bean<T>`
 ///
 /// ## 使用範例
 /// ```rust
 /// async fn init_depend(ioc: IoC) -> Vec<Depend> { ... }
 ///
 /// #[derive(Component)]
-/// #[scope = "prototype"]  // 指定為 singleton (預設) | prototype
+/// #[scope = "prototype"]  // 指定為 singleton (預設) | lazy_singleton | prototype
 /// struct Foo {
-///     #[component] // singleton 的類型只能是 Arc<T>
-///     service: Arc<Service>,
-///
-///     #[component] // prototype 只能是 T
-///     prototype: PrototypeService,
+///     #[component]
+///     service: Bean<Service>,
 ///
 ///     #[value = "hello"]
 ///     name: String,
