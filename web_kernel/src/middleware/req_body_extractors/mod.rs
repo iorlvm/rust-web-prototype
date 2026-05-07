@@ -1,5 +1,4 @@
 mod json_extractor;
-mod multipart_extractor;
 
 use crate::error::KernelError;
 use crate::http::{Request, Response};
@@ -10,7 +9,6 @@ use http_body_util::BodyExt;
 
 use crate::engine::Context;
 pub use json_extractor::*;
-pub use multipart_extractor::*;
 
 pub trait RequestBodyExtractor: Send + Sync {
     type Output: 'static + Send + Sync;
@@ -53,14 +51,5 @@ where
         ctx.insert(body);
 
         Ok(None)
-    }
-
-    async fn after(
-        &self,
-        _: &mut Context,
-        _: &Request,
-        result: Result<Response, KernelError>,
-    ) -> Result<Response, KernelError> {
-        result
     }
 }

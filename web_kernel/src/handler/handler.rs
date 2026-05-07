@@ -6,6 +6,22 @@ use crate::runtime::request_chain::request_chain;
 use crate::runtime::Endpoint;
 use async_trait::async_trait;
 use http::Method;
+use std::collections::HashMap;
+
+#[derive(Default)]
+pub struct PathVariables {
+    map: HashMap<String, String>,
+}
+
+impl PathVariables {
+    pub fn insert(&mut self, key: String, value: String) {
+        self.map.insert(key, value);
+    }
+
+    pub fn map(&self) -> &HashMap<String, String> {
+        &self.map
+    }
+}
 
 pub struct Handler {
     method: Method,
@@ -38,8 +54,41 @@ impl Handler {
     }
 
     pub fn matches(&self, method: &Method, path: &str) -> bool {
-        // TODO: Implement path pattern matching logic
-        self.method == method && self.route == path
+        if &self.method != method {
+            return false;
+        }
+
+        let pattern_parts = self.route.trim_matches('/').split('/');
+        let path_parts = path.trim_matches('/').split('/');
+
+        for (p, v) in pattern_parts.zip(path_parts) {
+            if p.starts_with('{') && p.ends_with('}') {
+                continue;
+            }
+
+            if p != v {
+                return false;
+            }
+        }
+
+        // 長度一致檢查
+        self.route.trim_matches('/').split('/').count() == path.trim_matches('/').split('/').count()
+    }
+
+    pub fn extract_path_variables(&self, path: &str) -> PathVariables {
+        let mut path_variables = PathVariables::default();
+
+        let pattern_parts = self.route.trim_matches('/').split('/');
+        let path_parts = path.trim_matches('/').split('/');
+
+        for (p, v) in pattern_parts.zip(path_parts) {
+            if p.starts_with('{') && p.ends_with('}') {
+                let key = &p[1..p.len() - 1];
+                path_variables.insert(key.to_string(), v.to_string());
+            }
+        }
+
+        path_variables
     }
 }
 

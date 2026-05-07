@@ -37,10 +37,9 @@ impl<T: Send + Sync + 'static> Kernel<T> {
         let result = match handler {
             Some(handler) => {
                 let mut req = Request::from(req);
-
                 let mut ctx = Context::default();
                 ctx.insert(self.injected.clone());
-
+                ctx.insert(handler.extract_path_variables(req.uri().path()));
                 request_chain(&mut ctx, &mut req, handler, &self.middleware).await
             }
             None => Err(KernelError::NotFound(

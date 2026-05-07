@@ -17,5 +17,7 @@ pub trait Middleware: Send + Sync {
         ctx: &mut Context,
         req: &Request,
         result: Result<Response, KernelError>,
-    ) -> Result<Response, KernelError>;
+    ) -> Result<Response, KernelError> {
+        result
+    }
 }

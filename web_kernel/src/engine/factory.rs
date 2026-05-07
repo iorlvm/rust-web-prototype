@@ -3,7 +3,7 @@ use crate::error::{
     DefaultFrameworkErrorHandler, ErrorDispatcher, ExternalErrorHandler, FrameworkErrorHandler,
 };
 use crate::handler::{Handler, HandlerRegistryBuilder};
-use crate::middleware::req_body_extractors::{JsonExtractor, MultipartExtractor};
+use crate::middleware::req_body_extractors::JsonExtractor;
 use crate::middleware::Middleware;
 use crate::Endpoint;
 use async_trait::async_trait;
@@ -20,9 +20,9 @@ pub fn registered_handlers() -> Vec<&'static HandlerRegistration> {
     inventory::iter::<HandlerRegistration>.into_iter().collect()
 }
 
-type MiddlewareChain = Vec<Box<dyn Middleware>>;
-type FrameworkErrorHandlerBox = Box<dyn FrameworkErrorHandler>;
-type ExternalErrorHandlerBox = Box<dyn ExternalErrorHandler>;
+pub type MiddlewareChain = Vec<Box<dyn Middleware>>;
+pub type FrameworkErrorHandlerBox = Box<dyn FrameworkErrorHandler>;
+pub type ExternalErrorHandlerBox = Box<dyn ExternalErrorHandler>;
 
 #[async_trait]
 pub trait KernelFactory<T: Send + Sync + 'static>: Send + Sync + 'static {
@@ -70,10 +70,7 @@ where
         }
         let registry = HandlerRegistryBuilder::new(handlers).build();
 
-        let mut middleware: MiddlewareChain = vec![
-            Box::new(MultipartExtractor::default()),
-            Box::new(JsonExtractor::default()),
-        ];
+        let mut middleware: MiddlewareChain = vec![Box::new(JsonExtractor::default())];
         middleware.extend(self.additional_middleware());
 
         let error_dispatcher = ErrorDispatcher::new(
