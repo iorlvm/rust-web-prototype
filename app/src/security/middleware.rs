@@ -2,6 +2,7 @@ use crate::error::ErrorPayload;
 use crate::security::jwt_provider::{Authentication, JwtProvider, Principal};
 use async_trait::async_trait;
 use ioc_lite::IoC;
+use std::sync::Arc;
 use web_kernel::engine::Context;
 use web_kernel::error::KernelError;
 use web_kernel::http::{Request, Response};
@@ -24,7 +25,9 @@ impl Middleware for JwtAuthMiddleware {
             .unwrap_or("");
 
         let ioc = ctx.get_injected::<IoC>();
-        let jwt_provider = ioc.get::<JwtProvider>().await;
+        let jwt_provider = ioc
+            .get::<JwtProvider>(Arc::new(req.trace_id().to_string()))
+            .await;
         {
             let jwt_provider = jwt_provider.read().await;
             let authentication = jwt_provider.resolve_token(token)?;

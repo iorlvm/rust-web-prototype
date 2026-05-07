@@ -72,7 +72,7 @@ impl Clone for IoC {
 }
 
 impl IoC {
-    pub async fn get<T>(&self) -> Bean<T>
+    pub async fn get<T>(&self, scope_id: ScopeId) -> Bean<T>
     where
         T: Component,
     {
@@ -82,21 +82,22 @@ impl IoC {
             .expect("component not registered");
 
         let ioc = self.clone();
-        let factory: ComponentFactory = Arc::new(move || {
+        let factory: ComponentFactory = Arc::new(move |scope_id| {
             let ioc = ioc.clone();
+            let scope_id = scope_id.clone();
             Box::pin(async move {
-                let boxed = Box::new(T::create(ioc).await) as Box<Object>;
+                let boxed = Box::new(T::create(ioc, scope_id).await) as Box<Object>;
                 Arc::new(RwLock::new(boxed)) as Bean<Object>
             })
         });
 
-        let hit = { scope.read().await.peek(&factory).await };
+        let hit = { scope.read().await.peek(scope_id.clone(), &factory).await };
 
         let instance = match hit {
             Some(instance) => instance,
             None => {
                 let mut scope = scope.write().await;
-                scope.resolve(&factory).await
+                scope.resolve(scope_id, &factory).await
             }
         };
 
@@ -106,16 +107,34 @@ impl IoC {
         instance.clone()
     }
 
+    pub async fn trigger<T>(&self, scope_id: ScopeId)
+    where
+        T: Component,
+    {
+        let _ = self.get::<T>(scope_id).await;
+    }
+
+    pub async fn destroy<T>(&self, scope_id: ScopeId)
+    where
+        T: Component,
+    {
+        if let Some((_, scope, _)) = self.map.get(&TypeId::of::<T>()) {
+            scope.write().await.destroy(scope_id).await;
+        }
+    }
+
     // test script
     pub async fn run_test(&self) {
+        let scope_id = Arc::new(IOC_SCOPE_KEY.to_string());
+
         println!("Running test script...");
         for (name, scope, init_trigger) in self.map.values() {
-            self.handle_action(Action::Trigger, scope, init_trigger)
+            self.handle_action(scope_id.clone(), Action::Trigger, scope, init_trigger)
                 .await;
             println!("- Triggered: {}", name)
         }
         for (name, scope, init_trigger) in self.map.values() {
-            self.handle_action(Action::Destroy, scope, init_trigger)
+            self.handle_action(scope_id.clone(), Action::Destroy, scope, init_trigger)
                 .await;
             println!("- Destroyed: {}", name)
         }
@@ -129,20 +148,27 @@ impl IoC {
     async fn on_build(&self) {
         for (_, scope, init_trigger) in self.map.values() {
             let action = { scope.read().await.on_build() };
-            self.handle_action(action, scope, init_trigger).await;
+            self.handle_action(
+                Arc::new(IOC_SCOPE_KEY.to_string()),
+                action,
+                scope,
+                init_trigger,
+            )
+            .await;
         }
     }
 
     // utils
     async fn handle_action(
         &self,
+        scope_id: ScopeId,
         action: Action,
         scope: &LifecycleScopeInstance,
         init_trigger: &ComponentInitTrigger,
     ) {
         match action {
-            Action::Trigger => init_trigger(self.clone()).await,
-            Action::Destroy => scope.write().await.destroy().await,
+            Action::Trigger => init_trigger(self.clone(), scope_id).await,
+            Action::Destroy => scope.write().await.destroy(scope_id).await,
             Action::None => (),
         }
     }
@@ -150,5 +176,5 @@ impl IoC {
 
 #[async_trait]
 pub trait Component: Send + Sync + 'static {
-    async fn create(ioc: IoC) -> Self;
+    async fn create(ioc: IoC, scope_id: ScopeId) -> Self;
 }

@@ -87,7 +87,7 @@ fn expand_named_struct_component(
 
                 // 生成 IoC 取用邏輯
                 field_initializers.push(quote! {
-                    #field_name: ioc.get::<#component_type>().await
+                    #field_name: ioc.get::<#component_type>(scope_id.clone()).await
                 });
             }
             FieldAttribute::None => {
@@ -138,7 +138,7 @@ fn expand_named_struct_component(
             #existing_where_predicates
             #(#where_bounds,)*
         {
-            async fn create(ioc: ::ioc_lite::IoC) -> Self {
+            async fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
                 Self {
                     #(#field_initializers,)*
                 }
@@ -189,6 +189,7 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
             InitMode::Eager => quote! { ::ioc_lite::SingletonScope::eager() },
             InitMode::Lazy => quote! { ::ioc_lite::SingletonScope::lazy() },
         },
+        Scope::Partitioned => quote! { ::ioc_lite::PartitionedScope::default() },
     };
 
     quote! {
@@ -196,9 +197,9 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
             ::ioc_lite::ComponentRegistration {
                 register: |builder| {
                     builder.register::<#struct_name>(
-                        |ioc| {
+                        |ioc, scope_id| {
                             Box::pin(async move {
-                                let _ = ioc.get::<#struct_name>().await;
+                                let _ = ioc.get::<#struct_name>(scope_id).await;
                             })
                         },
                         #scope_token
@@ -217,6 +218,7 @@ enum InitMode {
 enum Scope {
     Singleton(InitMode),
     Prototype,
+    Partitioned,
 }
 
 fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
@@ -243,9 +245,10 @@ fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
             "prototype" => Ok(Scope::Prototype),
             "singleton" => Ok(Scope::Singleton(InitMode::Eager)),
             "lazy_singleton" => Ok(Scope::Singleton(InitMode::Lazy)),
+            "partitioned" => Ok(Scope::Partitioned),
             _ => Err(Error::new_spanned(
                 v,
-                "invalid scope, expected 'singleton'|'lazy_singleton'|'prototype'",
+                "invalid scope, expected 'singleton'|'lazy_singleton'|'prototype'|'partitioned'",
             )),
         })
         .unwrap_or(Ok(Scope::Singleton(InitMode::Eager)))
