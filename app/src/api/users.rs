@@ -6,7 +6,6 @@ use crate::security::middleware::AuthGuard;
 use http::StatusCode;
 use ioc_lite::IoC;
 use serde::Serialize;
-use std::sync::Arc;
 use web_kernel::engine::Context;
 use web_kernel::error::KernelError;
 use web_kernel::handler;
@@ -15,9 +14,7 @@ use web_kernel::http::{Request, Response, ResponseBuilder};
 use web_kernel::types::JsonValue;
 
 #[handler(method = "POST", route = "/api/users")]
-pub async fn user_register(ctx: &mut Context, req: &mut Request) -> Result<Response, KernelError> {
-    let scope_id = Arc::new(req.trace_id().to_string());
-
+pub async fn user_register(ctx: &mut Context, _: &mut Request) -> Result<Response, KernelError> {
     let json = ctx.get::<JsonValue>();
     let json = unwrap_json_value(json)?;
 
@@ -39,7 +36,7 @@ pub async fn user_register(ctx: &mut Context, req: &mut Request) -> Result<Respo
     })?;
 
     let ioc = ctx.get_injected::<IoC>();
-    let repo = ioc.get::<UserRepository>(scope_id).await;
+    let repo = ioc.get::<UserRepository>(ctx.trace_id()).await;
     {
         let user = repo.write().await.save(user).await.map_err(|e| {
             KernelError::External(
@@ -57,14 +54,12 @@ pub async fn user_register(ctx: &mut Context, req: &mut Request) -> Result<Respo
 }
 
 #[handler(method = "POST", route = "/api/users/login")]
-pub async fn user_login(ctx: &mut Context, req: &mut Request) -> Result<Response, KernelError> {
-    let scope_id = Arc::new(req.trace_id().to_string());
-
+pub async fn user_login(ctx: &mut Context, _: &mut Request) -> Result<Response, KernelError> {
     let json = ctx.get::<JsonValue>();
     let json = unwrap_json_value(json)?;
 
     let ioc = ctx.get_injected::<IoC>();
-    let repo = ioc.get::<UserRepository>(scope_id.clone()).await;
+    let repo = ioc.get::<UserRepository>(ctx.trace_id()).await;
     let user = {
         repo.read()
             .await
@@ -87,7 +82,7 @@ pub async fn user_login(ctx: &mut Context, req: &mut Request) -> Result<Response
     }
 
     let user = user.unwrap();
-    let jwt_provider = ioc.get::<JwtProvider>(scope_id.clone()).await;
+    let jwt_provider = ioc.get::<JwtProvider>(ctx.trace_id()).await;
     let token = { jwt_provider.read().await.generate_token(&user) };
 
     build_json_response(UserDto::from_user_with_token(user, token))
@@ -95,8 +90,6 @@ pub async fn user_login(ctx: &mut Context, req: &mut Request) -> Result<Response
 
 #[handler(method = "GET", route = "/api/users", middleware(AuthGuard::authed()))]
 pub async fn user_query(ctx: &mut Context, req: &mut Request) -> Result<Response, KernelError> {
-    let scope_id = Arc::new(req.trace_id().to_string());
-
     let ioc = ctx.get_injected::<IoC>();
 
     let keyword = req
@@ -109,7 +102,7 @@ pub async fn user_query(ctx: &mut Context, req: &mut Request) -> Result<Response
         })
         .unwrap_or_else(|| "".to_string());
 
-    let repo = ioc.get::<UserRepository>(scope_id).await;
+    let repo = ioc.get::<UserRepository>(ctx.trace_id()).await;
     let users = { repo.read().await.query_by_name_like(&keyword).await };
 
     let users: Vec<UserDto> = users.into_iter().map(|u| UserDto::from_user(u)).collect();
@@ -121,8 +114,7 @@ pub async fn user_query(ctx: &mut Context, req: &mut Request) -> Result<Response
     route = "/api/users/{user_id}",
     middleware(auth_guard_with_user_id_same())
 )]
-pub async fn user_rename(ctx: &mut Context, req: &mut Request) -> Result<Response, KernelError> {
-    let scope_id = Arc::new(req.trace_id().to_string());
+pub async fn user_rename(ctx: &mut Context, _: &mut Request) -> Result<Response, KernelError> {
     let user_id = ctx
         .get::<PathVariables>()
         .unwrap()
@@ -142,7 +134,7 @@ pub async fn user_rename(ctx: &mut Context, req: &mut Request) -> Result<Respons
     let user_id = user_id.unwrap();
 
     let ioc = ctx.get_injected::<IoC>();
-    let repo = ioc.get::<UserRepository>(scope_id).await;
+    let repo = ioc.get::<UserRepository>(ctx.trace_id()).await;
     let user = { repo.read().await.find_by_id(user_id).await };
     if user.is_none() {
         return Err(KernelError::External(

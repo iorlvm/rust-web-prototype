@@ -9,6 +9,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
+use uuid::Uuid;
 
 pub struct Kernel<T: Send + Sync + 'static> {
     injected: Arc<T>,
@@ -57,12 +58,25 @@ impl<T: Send + Sync + 'static> Kernel<T> {
     }
 }
 
-#[derive(Default)]
 pub struct Context {
+    trace_id: Arc<String>,
     map: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            trace_id: Arc::new(Uuid::now_v7().to_string()),
+            map: HashMap::new(),
+        }
+    }
+}
+
 impl Context {
+    pub fn trace_id(&self) -> Arc<String> {
+        self.trace_id.clone()
+    }
+
     pub fn insert<T: 'static + Send + Sync>(&mut self, value: T) {
         self.map.insert(TypeId::of::<T>(), Box::new(value));
     }
