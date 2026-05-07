@@ -84,7 +84,10 @@ impl IoC {
         let ioc = self.clone();
         let factory: ComponentFactory = Arc::new(move || {
             let ioc = ioc.clone();
-            Box::pin(async move { Box::new(T::create(ioc).await) as Object })
+            Box::pin(async move {
+                let boxed = Box::new(T::create(ioc).await) as Box<Object>;
+                Arc::new(RwLock::new(boxed)) as Bean<Object>
+            })
         });
 
         let hit = { scope.read().await.peek(&factory).await };
@@ -97,7 +100,8 @@ impl IoC {
             }
         };
 
-        let instance: Bean<T> = unsafe { std::mem::transmute(instance) };
+        let raw = Arc::into_raw(instance);
+        let instance: Bean<T> = unsafe { Arc::from_raw(raw as *const RwLock<Box<T>>) };
 
         instance.clone()
     }

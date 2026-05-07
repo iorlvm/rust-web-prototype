@@ -4,11 +4,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-pub type Object = Box<dyn Any + Send + Sync>;
-pub type Shared<T> = Arc<RwLock<T>>;
-pub type Bean<T> = Shared<Box<T>>;
+pub type Object = dyn Any + Send + Sync;
+pub type Bean<T> = Arc<RwLock<Box<T>>>;
 
-pub type LifecycleScopeInstance = Shared<dyn LifecycleScope>;
+pub type LifecycleScopeInstance = Arc<RwLock<dyn LifecycleScope>>;
 pub type ComponentInitTrigger = fn(ioc: IoC) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 pub type ComponentFactory =
-    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Object> + Send>> + Send + Sync>;
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Bean<Object>> + Send>> + Send + Sync>;

@@ -1,7 +1,5 @@
-use crate::{ComponentFactory, Object, Shared};
+use crate::{Bean, ComponentFactory, Object};
 use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 pub enum Action {
     Trigger,
@@ -11,8 +9,8 @@ pub enum Action {
 
 #[async_trait]
 pub trait LifecycleScope: Send + Sync + 'static {
-    async fn peek(&self, factory: &ComponentFactory) -> Option<Shared<Object>>;
-    async fn resolve(&mut self, factory: &ComponentFactory) -> Shared<Object>;
+    async fn peek(&self, factory: &ComponentFactory) -> Option<Bean<Object>>;
+    async fn resolve(&mut self, factory: &ComponentFactory) -> Bean<Object>;
     async fn destroy(&mut self);
 
     // lifecycle hook
@@ -25,11 +23,11 @@ pub trait LifecycleScope: Send + Sync + 'static {
 pub struct PrototypeScope;
 #[async_trait]
 impl LifecycleScope for PrototypeScope {
-    async fn peek(&self, factory: &ComponentFactory) -> Option<Shared<Object>> {
-        Some(Arc::new(RwLock::new(factory().await)))
+    async fn peek(&self, factory: &ComponentFactory) -> Option<Bean<Object>> {
+        Some(factory().await)
     }
 
-    async fn resolve(&mut self, _: &ComponentFactory) -> Shared<Object> {
+    async fn resolve(&mut self, _: &ComponentFactory) -> Bean<Object> {
         unreachable!()
     }
 
@@ -38,7 +36,7 @@ impl LifecycleScope for PrototypeScope {
 
 pub struct SingletonScope {
     lazy: bool,
-    instance: Option<Shared<Object>>,
+    instance: Option<Bean<Object>>,
 }
 
 impl SingletonScope {
@@ -59,17 +57,16 @@ impl SingletonScope {
 
 #[async_trait]
 impl LifecycleScope for SingletonScope {
-    async fn peek(&self, _: &ComponentFactory) -> Option<Shared<Object>> {
+    async fn peek(&self, _: &ComponentFactory) -> Option<Bean<Object>> {
         self.instance.clone()
     }
 
-    async fn resolve(&mut self, factory: &ComponentFactory) -> Shared<Object> {
+    async fn resolve(&mut self, factory: &ComponentFactory) -> Bean<Object> {
         if let Some(instance) = &self.instance {
             return instance.clone();
         }
 
-        let obj = factory().await;
-        let instance = Arc::new(RwLock::new(obj));
+        let instance = factory().await;
         self.instance = Some(instance.clone());
 
         instance
