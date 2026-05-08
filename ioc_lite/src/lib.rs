@@ -1,23 +1,46 @@
-mod lifecycle;
-mod types;
-
 pub use async_trait::async_trait;
 pub use ioc_lite_macro::Component;
-pub use lifecycle::*;
-pub use types::*;
 
-use std::any::TypeId;
+use dashmap::{DashMap, Entry};
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+pub const SINGLETON_SCOPE_ID: ScopeId = u64::MAX;
+pub const RUN_TEST_SCOPE_ID: ScopeId = u64::MAX - 1;
+
+// types
+pub type ScopeId = u64;
+pub type Bean<T> = Arc<RwLock<Box<T>>>;
+
+type Object = dyn Any + Send + Sync;
+type ComponentInitTrigger =
+    fn(ioc: IoC, scope_id: ScopeId) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+type Item = (
+    String,
+    ScopeType,
+    ComponentInitTrigger,
+    DashMap<ScopeId, Bean<Object>>,
+);
+
+pub enum InitMode {
+    Eager,
+    Lazy,
+}
+
+pub enum ScopeType {
+    Singleton(InitMode),
+    Prototype,
+    Partitioned,
+}
 
 // 自動註冊機制
 inventory::collect!(ComponentRegistration);
 pub struct ComponentRegistration {
     pub register: fn(builder: &mut IoCBuilder) -> (),
 }
-
-type Item = (String, LifecycleScopeInstance, ComponentInitTrigger);
 
 // 將 register 與 runtime 分離, 降低資源管理複雜度
 pub struct IoCBuilder {
@@ -36,7 +59,7 @@ impl IoCBuilder {
         builder
     }
 
-    pub fn register<T>(&mut self, init_trigger: ComponentInitTrigger, scope: impl LifecycleScope)
+    pub fn register<T>(&mut self, scope_type: ScopeType, init_trigger: ComponentInitTrigger)
     where
         T: Component,
     {
@@ -44,8 +67,9 @@ impl IoCBuilder {
             TypeId::of::<T>(),
             (
                 std::any::type_name::<T>().to_string(),
-                Arc::new(RwLock::new(scope)),
+                scope_type,
                 init_trigger,
+                DashMap::new(),
             ),
         );
     }
@@ -76,28 +100,42 @@ impl IoC {
     where
         T: Component,
     {
-        let (_, scope, _) = self
+        let (_, scope_type, _, bean_map) = self
             .map
             .get(&TypeId::of::<T>())
             .expect("component not registered");
 
-        let ioc = self.clone();
-        let factory: ComponentFactory = Arc::new(move |scope_id| {
-            let ioc = ioc.clone();
-            let scope_id = scope_id.clone();
-            Box::pin(async move {
-                let boxed = Box::new(T::create(ioc, scope_id).await) as Box<Object>;
-                Arc::new(RwLock::new(boxed)) as Bean<Object>
-            })
-        });
+        if let ScopeType::Prototype = scope_type {
+            return Arc::new(RwLock::new(Box::new(
+                T::create(self.clone(), scope_id).await,
+            )));
+        }
 
-        let hit = { scope.read().await.peek(scope_id.clone(), &factory).await };
+        let scope_id = match scope_type {
+            ScopeType::Singleton(_) => SINGLETON_SCOPE_ID,
+            _ => scope_id,
+        };
+
+        let hit = {
+            bean_map
+                .get(&scope_id)
+                .map(|instance| instance.clone())
+        };
 
         let instance = match hit {
-            Some(instance) => instance,
+            Some(instance) => instance.clone(),
             None => {
-                let mut scope = scope.write().await;
-                scope.resolve(scope_id, &factory).await
+                // 調整初始化順序, 降低堵塞時間 (副作用: create 會觸發多次)
+                let created = {
+                    let value = T::create(self.clone(), scope_id.clone()).await;
+                    let boxed = Box::new(value) as Box<Object>;
+                    Arc::new(RwLock::new(boxed))
+                };
+
+                match bean_map.entry(scope_id) {
+                    Entry::Occupied(o) => o.get().clone(),
+                    Entry::Vacant(v) => v.insert(created).clone(),
+                }
             }
         };
 
@@ -111,32 +149,51 @@ impl IoC {
     where
         T: Component,
     {
-        let _ = self.get::<T>(scope_id).await;
+        let item = self.map.get(&TypeId::of::<T>());
+        if let Some((_, scope_type, _, _)) = item {
+            if let ScopeType::Prototype = scope_type {
+                return;
+            }
+            let _ = self.get::<T>(scope_id).await;
+        }
     }
 
     pub async fn destroy<T>(&self, scope_id: ScopeId)
     where
         T: Component,
     {
-        if let Some((_, scope, _)) = self.map.get(&TypeId::of::<T>()) {
-            scope.write().await.destroy(scope_id).await;
+        let item = self.map.get(&TypeId::of::<T>());
+        if let Some((_, _, _, bean_map)) = item {
+            bean_map.remove(&scope_id);
         }
     }
 
     // test script
     pub async fn run_test(&self) {
-        let scope_id = Arc::new(IOC_SCOPE_KEY.to_string());
-
         println!("Running test script...");
-        for (name, scope, init_trigger) in self.map.values() {
-            self.handle_action(scope_id.clone(), Action::Trigger, scope, init_trigger)
-                .await;
-            println!("- Triggered: {}", name)
+        for (name, scope_type, init_trigger, _) in self.map.values() {
+            init_trigger(self.clone(), RUN_TEST_SCOPE_ID).await;
+            let scope = match scope_type {
+                ScopeType::Singleton(_) => "singleton",
+                ScopeType::Prototype => "prototype",
+                ScopeType::Partitioned => "test",
+            };
+            println!("- Triggered in {} scope: {}", scope, name)
         }
-        for (name, scope, init_trigger) in self.map.values() {
-            self.handle_action(scope_id.clone(), Action::Destroy, scope, init_trigger)
-                .await;
-            println!("- Destroyed: {}", name)
+        for (name, scope_type, _, bean_map) in self.map.values() {
+            match scope_type {
+                ScopeType::Singleton(_) => {
+                    bean_map.remove(&RUN_TEST_SCOPE_ID);
+                    println!("- Destroyed in singleton scope: {}", name);
+                }
+                ScopeType::Partitioned => {
+                    bean_map.remove(&RUN_TEST_SCOPE_ID);
+                    println!("- Destroyed in test scope: {}", name);
+                }
+                ScopeType::Prototype => {
+                    println!("- Prototype scope not need destroy: {}", name);
+                }
+            }
         }
         println!("Test script finished");
 
@@ -146,30 +203,12 @@ impl IoC {
 
     // hooks
     async fn on_build(&self) {
-        for (_, scope, init_trigger) in self.map.values() {
-            let action = { scope.read().await.on_build() };
-            self.handle_action(
-                Arc::new(IOC_SCOPE_KEY.to_string()),
-                action,
-                scope,
-                init_trigger,
-            )
-            .await;
-        }
-    }
-
-    // utils
-    async fn handle_action(
-        &self,
-        scope_id: ScopeId,
-        action: Action,
-        scope: &LifecycleScopeInstance,
-        init_trigger: &ComponentInitTrigger,
-    ) {
-        match action {
-            Action::Trigger => init_trigger(self.clone(), scope_id).await,
-            Action::Destroy => scope.write().await.destroy(scope_id).await,
-            Action::None => (),
+        for (_, scope_type, init_trigger, _) in self.map.values() {
+            if let ScopeType::Singleton(mode) = scope_type {
+                if let InitMode::Eager = mode {
+                    init_trigger(self.clone(), SINGLETON_SCOPE_ID).await;
+                }
+            }
         }
     }
 }

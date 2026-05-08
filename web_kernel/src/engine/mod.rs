@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use uuid::Uuid;
+use xxhash_rust::xxh64::xxh64;
 
 pub struct Kernel<T: Send + Sync + 'static> {
     injected: Arc<T>,
@@ -75,6 +76,10 @@ impl Default for Context {
 impl Context {
     pub fn trace_id(&self) -> Arc<String> {
         self.trace_id.clone()
+    }
+
+    pub fn trace_id_as_u64(&self) -> u64 {
+        xxh64(self.trace_id.as_bytes(), 0)
     }
 
     pub fn insert<T: 'static + Send + Sync>(&mut self, value: T) {

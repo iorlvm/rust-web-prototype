@@ -25,7 +25,7 @@ impl Middleware for JwtAuthMiddleware {
 
         let ioc = ctx.get_injected::<IoC>();
         let jwt_provider = ioc
-            .get::<JwtProvider>(ctx.trace_id())
+            .get::<JwtProvider>(ctx.trace_id_as_u64())
             .await;
         {
             let jwt_provider = jwt_provider.read().await;

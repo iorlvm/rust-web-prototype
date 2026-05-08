@@ -184,12 +184,12 @@ fn expand_unit_struct_component(
 /// - IoC 容器可動態建立 instance
 fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_macro2::TokenStream {
     let scope_token = match scope {
-        Scope::Prototype => quote! { ::ioc_lite::PrototypeScope::default() },
+        Scope::Prototype => quote! { ::ioc_lite::ScopeType::Prototype },
         Scope::Singleton(mode) => match mode {
-            InitMode::Eager => quote! { ::ioc_lite::SingletonScope::eager() },
-            InitMode::Lazy => quote! { ::ioc_lite::SingletonScope::lazy() },
+            InitMode::Eager => quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Eager) },
+            InitMode::Lazy => quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Lazy) },
         },
-        Scope::Partitioned => quote! { ::ioc_lite::PartitionedScope::default() },
+        Scope::Partitioned => quote! { ::ioc_lite::ScopeType::Partitioned },
     };
 
     quote! {
@@ -197,12 +197,12 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
             ::ioc_lite::ComponentRegistration {
                 register: |builder| {
                     builder.register::<#struct_name>(
+                        #scope_token,
                         |ioc, scope_id| {
                             Box::pin(async move {
                                 let _ = ioc.get::<#struct_name>(scope_id).await;
                             })
                         },
-                        #scope_token
                     );
                 },
             }

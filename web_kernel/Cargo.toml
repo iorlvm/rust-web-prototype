@@ -19,4 +19,5 @@ bytes = "1"
 serde = "1.0.228"
 serde_json = "1.0.149"
 uuid = { version = "1.23.1", features = ["v7"] }
+xxhash-rust = { version = "0.8", features = ["xxh64"] }
 inventory = "0.3.24"
