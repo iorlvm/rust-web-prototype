@@ -200,7 +200,7 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
                         #scope_token,
                         |ioc, scope_id| {
                             Box::pin(async move {
-                                let _ = ioc.get::<#struct_name>(scope_id).await;
+                                ioc.force_warmup::<#struct_name>(scope_id).await;
                             })
                         },
                     );

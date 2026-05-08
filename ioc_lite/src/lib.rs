@@ -9,27 +9,28 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub const SINGLETON_SCOPE_ID: ScopeId = u64::MAX;
-pub const RUN_TEST_SCOPE_ID: ScopeId = u64::MAX - 1;
 
 // types
 pub type ScopeId = u64;
 pub type Bean<T> = Arc<RwLock<Box<T>>>;
 
 type Object = dyn Any + Send + Sync;
-type ComponentInitTrigger =
+type ComponentForceWarmupFn =
     fn(ioc: IoC, scope_id: ScopeId) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 type Item = (
     String,
     ScopeType,
-    ComponentInitTrigger,
+    ComponentForceWarmupFn,
     DashMap<ScopeId, Bean<Object>>,
 );
 
+#[derive(Clone)]
 pub enum InitMode {
     Eager,
     Lazy,
 }
 
+#[derive(Clone)]
 pub enum ScopeType {
     Singleton(InitMode),
     Prototype,
@@ -46,6 +47,29 @@ pub struct ComponentRegistration {
 pub struct IoCBuilder {
     map: HashMap<TypeId, Item>,
 }
+
+impl Clone for IoCBuilder {
+    fn clone(&self) -> Self {
+        Self {
+            map: self
+                .map
+                .iter()
+                .map(|(type_id, (name, scope_type, force_warmup, _))| {
+                    (
+                        *type_id,
+                        (
+                            name.clone(),
+                            scope_type.clone(),
+                            *force_warmup,
+                            DashMap::new(),
+                        ),
+                    )
+                })
+                .collect::<HashMap<TypeId, Item>>(),
+        }
+    }
+}
+
 impl IoCBuilder {
     pub fn new() -> Self {
         let mut builder = Self {
@@ -59,7 +83,7 @@ impl IoCBuilder {
         builder
     }
 
-    pub fn register<T>(&mut self, scope_type: ScopeType, init_trigger: ComponentInitTrigger)
+    pub fn register<T>(&mut self, scope_type: ScopeType, force_warmup: ComponentForceWarmupFn)
     where
         T: Component,
     {
@@ -68,15 +92,27 @@ impl IoCBuilder {
             (
                 std::any::type_name::<T>().to_string(),
                 scope_type,
-                init_trigger,
+                force_warmup,
                 DashMap::new(),
             ),
         );
     }
 
+    pub async fn build_with_test(self) -> IoC {
+        let cloned = self.clone();
+        let test_ioc = IoC {
+            map: Arc::new(cloned.map),
+            test_trace: Some(Arc::new(DashMap::new())),
+        };
+        test_ioc.run_test().await;
+
+        self.build().await
+    }
+
     pub async fn build(self) -> IoC {
         let ioc = IoC {
             map: Arc::new(self.map),
+            test_trace: None,
         };
         ioc.on_build().await;
         ioc
@@ -85,12 +121,14 @@ impl IoCBuilder {
 
 pub struct IoC {
     map: Arc<HashMap<TypeId, Item>>,
+    test_trace: Option<Arc<DashMap<TypeId, ()>>>,
 }
 
 impl Clone for IoC {
     fn clone(&self) -> Self {
         Self {
             map: self.map.clone(),
+            test_trace: self.test_trace.clone(),
         }
     }
 }
@@ -100,15 +138,25 @@ impl IoC {
     where
         T: Component,
     {
-        let (_, scope_type, _, bean_map) = self
-            .map
-            .get(&TypeId::of::<T>())
-            .expect("component not registered");
+        let type_id = TypeId::of::<T>();
+        if let Some(test_trace) = &self.test_trace {
+            if test_trace.contains_key(&type_id) {
+                panic!("circular dependency detected");
+            }
+        }
+
+        let (_, scope_type, _, bean_map) =
+            self.map.get(&type_id).expect("component not registered");
 
         if let ScopeType::Prototype = scope_type {
-            return Arc::new(RwLock::new(Box::new(
-                T::create(self.clone(), scope_id).await,
-            )));
+            if let Some(test_trace) = &self.test_trace {
+                test_trace.insert(type_id, ());
+            }
+            let value = T::create(self.clone(), scope_id).await;
+            if let Some(test_trace) = &self.test_trace {
+                test_trace.remove(&type_id);
+            }
+            return Arc::new(RwLock::new(Box::new(value)));
         }
 
         let scope_id = match scope_type {
@@ -116,18 +164,20 @@ impl IoC {
             _ => scope_id,
         };
 
-        let hit = {
-            bean_map
-                .get(&scope_id)
-                .map(|instance| instance.clone())
-        };
+        let hit = { bean_map.get(&scope_id).map(|instance| instance.clone()) };
 
         let instance = match hit {
             Some(instance) => instance.clone(),
             None => {
                 // 調整初始化順序, 降低堵塞時間 (副作用: create 會觸發多次)
                 let created = {
+                    if let Some(test_trace) = &self.test_trace {
+                        test_trace.insert(type_id, ());
+                    }
                     let value = T::create(self.clone(), scope_id.clone()).await;
+                    if let Some(test_trace) = &self.test_trace {
+                        test_trace.remove(&type_id);
+                    }
                     let boxed = Box::new(value) as Box<Object>;
                     Arc::new(RwLock::new(boxed))
                 };
@@ -145,7 +195,7 @@ impl IoC {
         instance.clone()
     }
 
-    pub async fn trigger<T>(&self, scope_id: ScopeId)
+    pub async fn warmup<T>(&self, scope_id: ScopeId)
     where
         T: Component,
     {
@@ -156,6 +206,13 @@ impl IoC {
             }
             let _ = self.get::<T>(scope_id).await;
         }
+    }
+
+    pub async fn force_warmup<T>(&self, scope_id: ScopeId)
+    where
+        T: Component,
+    {
+        self.get::<T>(scope_id).await;
     }
 
     pub async fn destroy<T>(&self, scope_id: ScopeId)
@@ -169,44 +226,20 @@ impl IoC {
     }
 
     // test script
-    pub async fn run_test(&self) {
+    async fn run_test(&self) {
         println!("Running test script...");
-        for (name, scope_type, init_trigger, _) in self.map.values() {
-            init_trigger(self.clone(), RUN_TEST_SCOPE_ID).await;
-            let scope = match scope_type {
-                ScopeType::Singleton(_) => "singleton",
-                ScopeType::Prototype => "prototype",
-                ScopeType::Partitioned => "test",
-            };
-            println!("- Triggered in {} scope: {}", scope, name)
-        }
-        for (name, scope_type, _, bean_map) in self.map.values() {
-            match scope_type {
-                ScopeType::Singleton(_) => {
-                    bean_map.remove(&RUN_TEST_SCOPE_ID);
-                    println!("- Destroyed in singleton scope: {}", name);
-                }
-                ScopeType::Partitioned => {
-                    bean_map.remove(&RUN_TEST_SCOPE_ID);
-                    println!("- Destroyed in test scope: {}", name);
-                }
-                ScopeType::Prototype => {
-                    println!("- Prototype scope not need destroy: {}", name);
-                }
-            }
+        for (name, _, force_warmup, _) in self.map.values() {
+            force_warmup(self.clone(), SINGLETON_SCOPE_ID).await;
+            println!("- Component initialization checked: {}", name)
         }
         println!("Test script finished");
-
-        println!("Rebuilding IoC...");
-        self.on_build().await;
     }
 
-    // hooks
     async fn on_build(&self) {
-        for (_, scope_type, init_trigger, _) in self.map.values() {
+        for (_, scope_type, force_warmup, _) in self.map.values() {
             if let ScopeType::Singleton(mode) = scope_type {
                 if let InitMode::Eager = mode {
-                    init_trigger(self.clone(), SINGLETON_SCOPE_ID).await;
+                    force_warmup(self.clone(), SINGLETON_SCOPE_ID).await;
                 }
             }
         }
