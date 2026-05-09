@@ -87,7 +87,7 @@ fn expand_named_struct_component(
 
                 // 生成 IoC 取用邏輯
                 field_initializers.push(quote! {
-                    #field_name: ioc.get::<#component_type>(scope_id.clone()).await
+                    #field_name: ioc.get::<#component_type>(scope_id.clone())
                 });
             }
             FieldAttribute::None => {
@@ -112,8 +112,16 @@ fn expand_named_struct_component(
 
                 field_initializers.push(initializers);
             }
-            FieldAttribute::Script(func) => {
-                field_initializers.push(quote! { #field_name: (#func)(ioc.clone()).await });
+            FieldAttribute::Script(func, with_cache) => {
+                let initializers = if with_cache {
+                    quote! {
+                        #field_name: ::ioc_lite::run_script_with_cache(&ioc, #func)
+                    }
+                } else {
+                    quote! { #field_name: ::ioc_lite::run_script(&ioc, #func) }
+                };
+
+                field_initializers.push(initializers);
             }
         }
     }
@@ -132,13 +140,12 @@ fn expand_named_struct_component(
     // 最終輸出（Component impl + registration）
     let registration = expand_component_registration(&scope, &struct_name);
     let expanded = quote! {
-        #[::ioc_lite::async_trait]
         impl #impl_generics ::ioc_lite::Component for #struct_name #type_generics
         where
             #existing_where_predicates
             #(#where_bounds,)*
         {
-            async fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
+            fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
                 Self {
                     #(#field_initializers,)*
                 }
@@ -186,8 +193,12 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
     let scope_token = match scope {
         Scope::Prototype => quote! { ::ioc_lite::ScopeType::Prototype },
         Scope::Singleton(mode) => match mode {
-            InitMode::Eager => quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Eager) },
-            InitMode::Lazy => quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Lazy) },
+            InitMode::Eager => {
+                quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Eager) }
+            }
+            InitMode::Lazy => {
+                quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Lazy) }
+            }
         },
         Scope::Partitioned => quote! { ::ioc_lite::ScopeType::Partitioned },
     };
@@ -198,11 +209,6 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
                 register: |builder| {
                     builder.register::<#struct_name>(
                         #scope_token,
-                        |ioc, scope_id| {
-                            Box::pin(async move {
-                                ioc.force_warmup::<#struct_name>(scope_id).await;
-                            })
-                        },
                     );
                 },
             }

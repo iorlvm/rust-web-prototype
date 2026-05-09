@@ -17,7 +17,7 @@ pub struct TestKernelFactory {}
 #[async_trait]
 impl KernelFactory<IoC> for TestKernelFactory {
     async fn build_injected(&self) -> IoC {
-        IoCBuilder::new().build_with_test().await
+        IoCBuilder::new().build_with_test()
     }
 
     fn additional_middleware(&self) -> MiddlewareChain {

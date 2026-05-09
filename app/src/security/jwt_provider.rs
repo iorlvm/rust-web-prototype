@@ -13,16 +13,16 @@ pub enum Authentication {
 
 #[derive(Component)]
 pub struct JwtProvider {
-    #[script(async |_| DecodingKey::from_rsa_pem(PUBLIC_KEY_PEM.as_bytes()).unwrap())]
+    #[script(async || DecodingKey::from_rsa_pem(PUBLIC_KEY_PEM.as_bytes()).unwrap())]
     public_key: DecodingKey,
 
-    #[script(async |_| EncodingKey::from_rsa_pem(PRIVATE_KEY_PEM.as_bytes()).unwrap())]
+    #[script(async || EncodingKey::from_rsa_pem(PRIVATE_KEY_PEM.as_bytes()).unwrap())]
     private_key: EncodingKey,
 
-    #[script(async |_| Header::new(Algorithm::RS256))]
+    #[script(async || Header::new(Algorithm::RS256))]
     header: Header,
 
-    #[script(async |_| Validation::new(Algorithm::RS256))]
+    #[script(async || Validation::new(Algorithm::RS256))]
     validation: Validation,
 
     #[value = 3600]

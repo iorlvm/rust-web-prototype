@@ -11,7 +11,7 @@ use syn::{Attribute, Error, Expr, GenericArgument, Lit, Meta, PathArguments, Res
 pub enum FieldAttribute {
     Component,
     Value(Lit),
-    Script(Expr),
+    Script(Expr, bool),
     None,
 }
 impl FieldAttribute {
@@ -63,14 +63,35 @@ pub fn get_field_attr(attrs: &[Attribute]) -> Result<FieldAttribute> {
                 return Err(Error::new_spanned(attr, "duplicate attribute"));
             }
 
-            let expr = match &attr.meta {
-                Meta::List(_) => attr.parse_args::<Expr>()?,
+            let args = match &attr.meta {
+                Meta::List(meta_list) => meta_list.parse_args_with(
+                    syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated,
+                )?,
                 _ => {
-                    return Err(Error::new_spanned(attr, "expected #[script(fn)]"));
+                    return Err(Error::new_spanned(attr, "expected #[script(fn, ...)]"));
                 }
             };
 
-            flag = FieldAttribute::Script(expr);
+            let mut iter = args.into_iter();
+
+            let fn_expr = iter
+                .next()
+                .ok_or_else(|| Error::new_spanned(attr, "missing script function"))?;
+
+            let mut cache = false;
+
+            for arg in iter {
+                match arg {
+                    Expr::Path(expr_path) if expr_path.path.is_ident("cache") => {
+                        cache = true;
+                    }
+                    _ => {
+                        return Err(Error::new_spanned(attr, "unknown script flag"));
+                    }
+                }
+            }
+
+            flag = FieldAttribute::Script(fn_expr, cache);
         }
     }
 

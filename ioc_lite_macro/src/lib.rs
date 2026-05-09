@@ -14,7 +14,7 @@ use syn::{parse_macro_input, DeriveInput};
 /// 3. 支援欄位注入：
 ///    - `#[component]`：從 IoC 取得依賴（必須為 Bean<T>）
 ///    - `#[value = "..."]`：常數注入
-///    - `#[script(async fn(ioc) -> T)`：腳本注入
+///    - `#[script(async fn() -> T)`：腳本注入
 ///    - 無標註：使用 Default
 /// 4. 自動註冊至 `inventory`
 ///
@@ -26,7 +26,7 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 /// ## 使用範例
 /// ```rust
-/// async fn init_depend(ioc: IoC) -> Vec<Depend> { ... }
+/// async fn init_depend() -> Vec<Depend> { ... }
 ///
 /// #[derive(Component)]
 /// #[scope = "prototype"]  // 指定為 singleton (預設) | lazy_singleton | prototype
@@ -37,10 +37,10 @@ use syn::{parse_macro_input, DeriveInput};
 ///     #[value = "hello"]
 ///     name: String,
 ///
-///     #[script(init_depend)]
+///     #[script(init_depend, cache)] // 啟用 cache 時回傳值必須可安全重用: T: Clone (可複製）| Arc<T>（共享不可變）
 ///     depend: Vec<Depend>,
 ///
-///     #[script(async |_| vec![1, 2, 3])]
+///     #[script(async || vec![1, 2, 3])]
 ///     arr: Vec<i32>,
 ///
 ///     cache: Cache, // Default::default()

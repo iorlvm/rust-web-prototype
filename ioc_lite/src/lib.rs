@@ -1,10 +1,8 @@
-pub use async_trait::async_trait;
 pub use ioc_lite_macro::Component;
 
 use dashmap::{DashMap, Entry};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -15,8 +13,7 @@ pub type ScopeId = u64;
 pub type Bean<T> = Arc<RwLock<Box<T>>>;
 
 type Object = dyn Any + Send + Sync;
-type ComponentForceWarmupFn =
-    fn(ioc: IoC, scope_id: ScopeId) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+type ComponentForceWarmupFn = fn(ioc: IoC, scope_id: ScopeId) -> ();
 type Item = (
     String,
     ScopeType,
@@ -83,7 +80,7 @@ impl IoCBuilder {
         builder
     }
 
-    pub fn register<T>(&mut self, scope_type: ScopeType, force_warmup: ComponentForceWarmupFn)
+    pub fn register<T>(&mut self, scope_type: ScopeType)
     where
         T: Component,
     {
@@ -92,49 +89,44 @@ impl IoCBuilder {
             (
                 std::any::type_name::<T>().to_string(),
                 scope_type,
-                force_warmup,
+                |ioc, scope_id| ioc.force_warmup::<T>(scope_id),
                 DashMap::new(),
             ),
         );
     }
 
-    pub async fn build_with_test(self) -> IoC {
+    pub fn build_with_test(self) -> IoC {
         let cloned = self.clone();
         let test_ioc = IoC {
             map: Arc::new(cloned.map),
+            script_cache: Arc::new(DashMap::new()),
             test_trace: Some(Arc::new(DashMap::new())),
         };
-        test_ioc.run_test().await;
+        test_ioc.run_test();
 
-        self.build().await
+        self.build()
     }
 
-    pub async fn build(self) -> IoC {
+    pub fn build(self) -> IoC {
         let ioc = IoC {
             map: Arc::new(self.map),
+            script_cache: Arc::new(DashMap::new()),
             test_trace: None,
         };
-        ioc.on_build().await;
+        ioc.on_build();
         ioc
     }
 }
 
+#[derive(Clone)]
 pub struct IoC {
     map: Arc<HashMap<TypeId, Item>>,
+    script_cache: Arc<DashMap<TypeId, Box<Object>>>,
     test_trace: Option<Arc<DashMap<TypeId, ()>>>,
 }
 
-impl Clone for IoC {
-    fn clone(&self) -> Self {
-        Self {
-            map: self.map.clone(),
-            test_trace: self.test_trace.clone(),
-        }
-    }
-}
-
 impl IoC {
-    pub async fn get<T>(&self, scope_id: ScopeId) -> Bean<T>
+    pub fn get<T>(&self, scope_id: ScopeId) -> Bean<T>
     where
         T: Component,
     {
@@ -152,7 +144,7 @@ impl IoC {
             if let Some(test_trace) = &self.test_trace {
                 test_trace.insert(type_id, ());
             }
-            let value = T::create(self.clone(), scope_id).await;
+            let value = T::create(self.clone(), scope_id);
             if let Some(test_trace) = &self.test_trace {
                 test_trace.remove(&type_id);
             }
@@ -168,25 +160,23 @@ impl IoC {
 
         let instance = match hit {
             Some(instance) => instance.clone(),
-            None => {
-                // 調整初始化順序, 降低堵塞時間 (副作用: create 會觸發多次)
-                let created = {
-                    if let Some(test_trace) = &self.test_trace {
-                        test_trace.insert(type_id, ());
-                    }
-                    let value = T::create(self.clone(), scope_id.clone()).await;
-                    if let Some(test_trace) = &self.test_trace {
-                        test_trace.remove(&type_id);
-                    }
-                    let boxed = Box::new(value) as Box<Object>;
-                    Arc::new(RwLock::new(boxed))
-                };
-
-                match bean_map.entry(scope_id) {
-                    Entry::Occupied(o) => o.get().clone(),
-                    Entry::Vacant(v) => v.insert(created).clone(),
+            None => match bean_map.entry(scope_id) {
+                Entry::Occupied(o) => o.get().clone(),
+                Entry::Vacant(v) => {
+                    let created = {
+                        if let Some(test_trace) = &self.test_trace {
+                            test_trace.insert(type_id, ());
+                        }
+                        let value = T::create(self.clone(), scope_id.clone());
+                        if let Some(test_trace) = &self.test_trace {
+                            test_trace.remove(&type_id);
+                        }
+                        let boxed = Box::new(value) as Box<Object>;
+                        Arc::new(RwLock::new(boxed))
+                    };
+                    v.insert(created).clone()
                 }
-            }
+            },
         };
 
         let raw = Arc::into_raw(instance);
@@ -195,7 +185,7 @@ impl IoC {
         instance.clone()
     }
 
-    pub async fn warmup<T>(&self, scope_id: ScopeId)
+    pub fn warmup<T>(&self, scope_id: ScopeId)
     where
         T: Component,
     {
@@ -204,15 +194,15 @@ impl IoC {
             if let ScopeType::Prototype = scope_type {
                 return;
             }
-            let _ = self.get::<T>(scope_id).await;
+            let _ = self.get::<T>(scope_id);
         }
     }
 
-    pub async fn force_warmup<T>(&self, scope_id: ScopeId)
+    pub fn force_warmup<T>(&self, scope_id: ScopeId)
     where
         T: Component,
     {
-        self.get::<T>(scope_id).await;
+        self.get::<T>(scope_id);
     }
 
     pub async fn destroy<T>(&self, scope_id: ScopeId)
@@ -226,27 +216,67 @@ impl IoC {
     }
 
     // test script
-    async fn run_test(&self) {
+    fn run_test(&self) {
         println!("Running test script...");
         for (name, _, force_warmup, _) in self.map.values() {
-            force_warmup(self.clone(), SINGLETON_SCOPE_ID).await;
+            force_warmup(self.clone(), SINGLETON_SCOPE_ID);
             println!("- Component initialization checked: {}", name)
         }
         println!("Test script finished");
     }
 
-    async fn on_build(&self) {
+    fn on_build(&self) {
         for (_, scope_type, force_warmup, _) in self.map.values() {
             if let ScopeType::Singleton(mode) = scope_type {
                 if let InitMode::Eager = mode {
-                    force_warmup(self.clone(), SINGLETON_SCOPE_ID).await;
+                    force_warmup(self.clone(), SINGLETON_SCOPE_ID);
                 }
             }
         }
     }
 }
 
-#[async_trait]
 pub trait Component: Send + Sync + 'static {
-    async fn create(ioc: IoC, scope_id: ScopeId) -> Self;
+    fn create(ioc: IoC, scope_id: ScopeId) -> Self;
+}
+
+// macro script utility function
+pub fn run_script<T, S, Fut>(ioc: &IoC, script: S) -> T
+where
+    S: Fn() -> Fut + 'static,
+    Fut: Future<Output = T>,
+    T: Send + Sync + 'static,
+{
+    let result =
+        tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(script()));
+    if ioc.test_trace.is_some() {
+        println!(
+            "  - Script checked: async (IoC) -> {}",
+            std::any::type_name::<T>().to_string()
+        );
+    }
+
+    result
+}
+
+pub fn run_script_with_cache<T, S, Fut>(ioc: &IoC, script: S) -> T
+where
+    S: Fn() -> Fut + 'static,
+    Fut: Future<Output = T>,
+    T: Clone + Send + Sync + 'static,
+{
+    let script_id = TypeId::of::<S>();
+    let hit = ioc.script_cache.get(&script_id).map(|raw| {
+        raw.downcast_ref::<T>()
+            .expect("script type mismatch")
+            .clone()
+    });
+    if let Some(hit) = hit {
+        return hit;
+    }
+
+    let result = run_script(ioc, script);
+    ioc.script_cache.insert(script_id, Box::new(result.clone()));
+
+    result
 }
