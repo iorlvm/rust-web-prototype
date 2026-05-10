@@ -1,8 +1,9 @@
 mod attribute;
+mod proxy;
 mod expand;
 
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, DeriveInput, ItemImpl};
 
 /// # Component Derive Macro
 ///
@@ -26,7 +27,9 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 /// ## 使用範例
 /// ```rust
-/// async fn init_depend() -> Vec<Depend> { ... }
+/// use ioc_lite_macro::proxy_method;
+///
+///  async fn init_depend() -> Vec<Depend> { ... }
 ///
 /// #[derive(Component)]
 /// #[scope = "prototype"]  // 指定為 singleton (預設) | lazy_singleton | prototype
@@ -45,6 +48,9 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 ///     cache: Cache, // Default::default()
 /// }
+///
+/// #[proxy_method] // 自動實作 Bean<Foo> 將 pub [async] fn(&[mut] self) -> T 包裝成 pub async fn(&self) -> T
+/// impl Foo { ... }
 /// ```
 #[proc_macro_derive(Component, attributes(component, value, script, scope))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
@@ -54,4 +60,10 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
+}
+
+#[proc_macro_attribute]
+pub fn proxy_method(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as ItemImpl);
+    proxy::expand_method(item).into()
 }

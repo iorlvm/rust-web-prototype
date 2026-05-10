@@ -35,10 +35,12 @@ pub async fn user_register(ctx: &mut Context, _: &mut Request) -> Result<Respons
         )
     })?;
 
-    let ioc = ctx.get_injected::<IoC>();
-    let repo = ioc.get::<UserRepository>(ctx.trace_id_as_u64());
-    {
-        let user = repo.write().await.save(user).await.map_err(|e| {
+    let user = ctx
+        .get_injected::<IoC>()
+        .get::<UserRepository>(ctx.trace_id_as_u64())
+        .save(user)
+        .await
+        .map_err(|e| {
             KernelError::External(
                 ErrorPayload {
                     __ext_status: 500,
@@ -49,8 +51,7 @@ pub async fn user_register(ctx: &mut Context, _: &mut Request) -> Result<Respons
             )
         })?;
 
-        build_json_response(UserDto::from_user(user))
-    }
+    build_json_response(UserDto::from_user(user))
 }
 
 #[handler(method = "POST", route = "/api/users/login")]
@@ -59,16 +60,13 @@ pub async fn user_login(ctx: &mut Context, _: &mut Request) -> Result<Response, 
     let json = unwrap_json_value(json)?;
 
     let ioc = ctx.get_injected::<IoC>();
-    let repo = ioc.get::<UserRepository>(ctx.trace_id_as_u64());
-    let user = {
-        repo.read()
-            .await
-            .find_by_email_and_password(
-                &get_json_str(json, "email"),
-                &get_json_str(json, "password"),
-            )
-            .await
-    };
+    let user = ioc
+        .get::<UserRepository>(ctx.trace_id_as_u64())
+        .find_by_email_and_password(
+            &get_json_str(json, "email"),
+            &get_json_str(json, "password"),
+        )
+        .await;
 
     if user.is_none() {
         return Err(KernelError::External(
@@ -82,8 +80,10 @@ pub async fn user_login(ctx: &mut Context, _: &mut Request) -> Result<Response, 
     }
 
     let user = user.unwrap();
-    let jwt_provider = ioc.get::<JwtProvider>(ctx.trace_id_as_u64());
-    let token = { jwt_provider.read().await.generate_token(&user) };
+    let token = ioc
+        .get::<JwtProvider>(ctx.trace_id_as_u64())
+        .generate_token(&user)
+        .await;
 
     build_json_response(UserDto::from_user_with_token(user, token))
 }
@@ -102,8 +102,10 @@ pub async fn user_query(ctx: &mut Context, req: &mut Request) -> Result<Response
         })
         .unwrap_or_else(|| "".to_string());
 
-    let repo = ioc.get::<UserRepository>(ctx.trace_id_as_u64());
-    let users = { repo.read().await.query_by_name_like(&keyword).await };
+    let users = ioc
+        .get::<UserRepository>(ctx.trace_id_as_u64())
+        .query_by_name_like(&keyword)
+        .await;
 
     let users: Vec<UserDto> = users.into_iter().map(|u| UserDto::from_user(u)).collect();
     build_json_response(users)
@@ -135,7 +137,7 @@ pub async fn user_rename(ctx: &mut Context, _: &mut Request) -> Result<Response,
 
     let ioc = ctx.get_injected::<IoC>();
     let repo = ioc.get::<UserRepository>(ctx.trace_id_as_u64());
-    let user = { repo.read().await.find_by_id(user_id).await };
+    let user = repo.find_by_id(user_id).await;
     if user.is_none() {
         return Err(KernelError::External(
             ErrorPayload {
@@ -162,7 +164,9 @@ pub async fn user_rename(ctx: &mut Context, _: &mut Request) -> Result<Response,
         )
     })?;
 
-    match { repo.write().await.save(user).await } {
+    let saved = repo.save(user).await;
+
+    match saved {
         Ok(_) => Ok(ResponseBuilder::new()
             .status(StatusCode::from_u16(204).unwrap())
             .build()),

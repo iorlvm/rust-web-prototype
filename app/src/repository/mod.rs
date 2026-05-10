@@ -1,5 +1,5 @@
 use crate::model::User;
-use ioc_lite::Component;
+use ioc_lite::{proxy_method, Component};
 use std::collections::HashMap;
 
 // Memory-mocked user repository
@@ -13,6 +13,7 @@ pub struct UserRepository {
     name_index: HashMap<String, u64>,
 }
 
+#[proxy_method]
 impl UserRepository {
     pub async fn query_by_name_like(&self, search_name: &str) -> Vec<User> {
         let mut result = vec![];

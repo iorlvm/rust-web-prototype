@@ -1,6 +1,6 @@
 use crate::error::ErrorPayload;
 use crate::model::User;
-use ioc_lite::Component;
+use ioc_lite::{proxy_method, Component};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,6 +29,7 @@ pub struct JwtProvider {
     expire_secs: u64,
 }
 
+#[proxy_method]
 impl JwtProvider {
     pub fn generate_token(&self, user: &User) -> String {
         let principal = Principal::from(user);

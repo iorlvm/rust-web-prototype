@@ -1,7 +1,7 @@
 use crate::attribute::{extract_bean_inner_type, get_field_attr, FieldAttribute};
 
 use proc_macro2::Ident;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{Attribute, Data, DeriveInput, Error, Fields, FieldsNamed, Generics, Lit, Result};
 
 /// 展開 Component derive 實作
@@ -115,10 +115,10 @@ fn expand_named_struct_component(
             FieldAttribute::Script(func, with_cache) => {
                 let initializers = if with_cache {
                     quote! {
-                        #field_name: ::ioc_lite::run_script_with_cache(&ioc, #func)
+                        #field_name: ::ioc_lite::run_script_with_cache(&ioc, #func).await
                     }
                 } else {
-                    quote! { #field_name: ::ioc_lite::run_script(&ioc, #func) }
+                    quote! { #field_name: ::ioc_lite::run_script(&ioc, #func).await }
                 };
 
                 field_initializers.push(initializers);
@@ -138,14 +138,28 @@ fn expand_named_struct_component(
         .unwrap_or_default();
 
     // 最終輸出（Component impl + registration）
+    let proxy_ident = format_ident!("{}Proxy", struct_name);
     let registration = expand_component_registration(&scope, &struct_name);
     let expanded = quote! {
+        pub struct #proxy_ident {
+            inner: ::ioc_lite::Bean<#struct_name>
+        }
+
+        #[::ioc_lite::async_trait]
         impl #impl_generics ::ioc_lite::Component for #struct_name #type_generics
         where
             #existing_where_predicates
             #(#where_bounds,)*
         {
-            fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
+            type Output = #proxy_ident;
+
+            fn proxy(input: ::ioc_lite::Bean<Self>) -> Self::Output {
+                #proxy_ident {
+                    inner: input
+                }
+            }
+
+            async fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
                 Self {
                     #(#field_initializers,)*
                 }
@@ -169,11 +183,20 @@ fn expand_unit_struct_component(
 ) -> Result<proc_macro2::TokenStream> {
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
+    let proxy_ident = format_ident!("{}Proxy", struct_name);
     let registration = expand_component_registration(&scope, &struct_name);
     let expanded = quote! {
         #[::ioc_lite::async_trait]
         impl #impl_generics ::ioc_lite::Component for #struct_name #type_generics #where_clause {
-            async fn create(_ioc: ::ioc_lite::IoC) -> Self {
+             type Output = #proxy_ident;
+
+             fn proxy(input: ::ioc_lite::Bean<Self>) -> Self::Output {
+                #proxy_ident {
+                    inner: input
+                }
+            }
+
+            async fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
                 Self
             }
         }

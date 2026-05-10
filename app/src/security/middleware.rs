@@ -23,13 +23,13 @@ impl Middleware for JwtAuthMiddleware {
             .and_then(|v| v.strip_prefix("Bearer "))
             .unwrap_or("");
 
-        let ioc = ctx.get_injected::<IoC>();
-        let jwt_provider = ioc.get::<JwtProvider>(ctx.trace_id_as_u64());
-        {
-            let jwt_provider = jwt_provider.read().await;
-            let authentication = jwt_provider.resolve_token(token)?;
-            ctx.insert(authentication);
-        }
+        let authentication = ctx
+            .get_injected::<IoC>()
+            .get::<JwtProvider>(ctx.trace_id_as_u64())
+            .resolve_token(token)
+            .await?;
+
+        ctx.insert(authentication);
 
         Ok(None)
     }
