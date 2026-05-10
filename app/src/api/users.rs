@@ -37,7 +37,7 @@ pub async fn user_register(ctx: &mut Context, _: &mut Request) -> Result<Respons
 
     let user = ctx
         .get_injected::<IoC>()
-        .get::<UserRepository>(ctx.trace_id_as_u64())
+        .get::<UserRepository>()
         .save(user)
         .await
         .map_err(|e| {
@@ -61,7 +61,7 @@ pub async fn user_login(ctx: &mut Context, _: &mut Request) -> Result<Response, 
 
     let ioc = ctx.get_injected::<IoC>();
     let user = ioc
-        .get::<UserRepository>(ctx.trace_id_as_u64())
+        .get::<UserRepository>()
         .find_by_email_and_password(
             &get_json_str(json, "email"),
             &get_json_str(json, "password"),
@@ -80,10 +80,7 @@ pub async fn user_login(ctx: &mut Context, _: &mut Request) -> Result<Response, 
     }
 
     let user = user.unwrap();
-    let token = ioc
-        .get::<JwtProvider>(ctx.trace_id_as_u64())
-        .generate_token(&user)
-        .await;
+    let token = ioc.get::<JwtProvider>().generate_token(&user).await;
 
     build_json_response(UserDto::from_user_with_token(user, token))
 }
@@ -103,7 +100,7 @@ pub async fn user_query(ctx: &mut Context, req: &mut Request) -> Result<Response
         .unwrap_or_else(|| "".to_string());
 
     let users = ioc
-        .get::<UserRepository>(ctx.trace_id_as_u64())
+        .get::<UserRepository>()
         .query_by_name_like(&keyword)
         .await;
 
@@ -136,7 +133,7 @@ pub async fn user_rename(ctx: &mut Context, _: &mut Request) -> Result<Response,
     let user_id = user_id.unwrap();
 
     let ioc = ctx.get_injected::<IoC>();
-    let repo = ioc.get::<UserRepository>(ctx.trace_id_as_u64());
+    let mut repo = ioc.get::<UserRepository>();
     let user = repo.find_by_id(user_id).await;
     if user.is_none() {
         return Err(KernelError::External(
@@ -164,9 +161,7 @@ pub async fn user_rename(ctx: &mut Context, _: &mut Request) -> Result<Response,
         )
     })?;
 
-    let saved = repo.save(user).await;
-
-    match saved {
+    match repo.save(user).await {
         Ok(_) => Ok(ResponseBuilder::new()
             .status(StatusCode::from_u16(204).unwrap())
             .build()),

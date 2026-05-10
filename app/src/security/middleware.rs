@@ -25,7 +25,7 @@ impl Middleware for JwtAuthMiddleware {
 
         let authentication = ctx
             .get_injected::<IoC>()
-            .get::<JwtProvider>(ctx.trace_id_as_u64())
+            .get::<JwtProvider>()
             .resolve_token(token)
             .await?;
 

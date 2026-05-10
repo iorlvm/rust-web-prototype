@@ -87,7 +87,7 @@ fn expand_named_struct_component(
 
                 // 生成 IoC 取用邏輯
                 field_initializers.push(quote! {
-                    #field_name: ioc.get::<#component_type>(scope_id.clone())
+                    #field_name: ioc.get::<#component_type>()
                 });
             }
             FieldAttribute::None => {
@@ -115,10 +115,10 @@ fn expand_named_struct_component(
             FieldAttribute::Script(func, with_cache) => {
                 let initializers = if with_cache {
                     quote! {
-                        #field_name: ::ioc_lite::run_script_with_cache(&ioc, #func).await
+                        #field_name: ioc.run_script_with_cache(#func).await
                     }
                 } else {
-                    quote! { #field_name: ::ioc_lite::run_script(&ioc, #func).await }
+                    quote! { #field_name: ioc.run_script(#func).await }
                 };
 
                 field_initializers.push(initializers);
@@ -159,7 +159,7 @@ fn expand_named_struct_component(
                 }
             }
 
-            async fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
+            async fn create(ioc: ::ioc_lite::IoC) -> Self {
                 Self {
                     #(#field_initializers,)*
                 }
@@ -196,7 +196,7 @@ fn expand_unit_struct_component(
                 }
             }
 
-            async fn create(ioc: ::ioc_lite::IoC, scope_id: ::ioc_lite::ScopeId) -> Self {
+            async fn create(ioc: ::ioc_lite::IoC) -> Self {
                 Self
             }
         }
@@ -223,7 +223,6 @@ fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_mac
                 quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Lazy) }
             }
         },
-        Scope::Partitioned => quote! { ::ioc_lite::ScopeType::Partitioned },
     };
 
     quote! {
@@ -247,7 +246,6 @@ enum InitMode {
 enum Scope {
     Singleton(InitMode),
     Prototype,
-    Partitioned,
 }
 
 fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
@@ -274,10 +272,9 @@ fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
             "prototype" => Ok(Scope::Prototype),
             "singleton" => Ok(Scope::Singleton(InitMode::Eager)),
             "lazy_singleton" => Ok(Scope::Singleton(InitMode::Lazy)),
-            "partitioned" => Ok(Scope::Partitioned),
             _ => Err(Error::new_spanned(
                 v,
-                "invalid scope, expected 'singleton'|'lazy_singleton'|'prototype'|'partitioned'",
+                "invalid scope, expected 'singleton'|'lazy_singleton'|'prototype'",
             )),
         })
         .unwrap_or(Ok(Scope::Singleton(InitMode::Eager)))
