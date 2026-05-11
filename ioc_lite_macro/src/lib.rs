@@ -11,11 +11,11 @@ use syn::{parse_macro_input, DeriveInput, ItemImpl};
 ///
 /// ## 功能
 /// 1. 自動實作 `ioc_lite::Component` trait
-/// 2. 自動生成 `create(ioc_lite)` 建構函式
+/// 2. 自動生成 `create(scope)` 建構函式
 /// 3. 支援欄位注入：
-///    - `#[component]`：從 IoC 取得依賴（必須為 Bean<T>）
+///    - `#[component]`：從 IoC 取得依賴（必須為 Proxy<T>）
 ///    - `#[value = "..."]`：常數注入
-///    - `#[script(async fn() -> T)`：腳本注入
+///    - `#[script(async fn(meta: Arc<Json>) -> T)`：腳本注入
 ///    - 無標註：使用 Default
 /// 4. 自動註冊至 `inventory`
 ///
@@ -23,7 +23,7 @@ use syn::{parse_macro_input, DeriveInput, ItemImpl};
 /// - 僅支援 struct
 /// - 不支援 generic struct
 /// - 不支援 tuple / unnamed struct
-/// - component 欄位必須為 `Bean<T>`
+/// - component 欄位必須為 `Proxy<T>`
 ///
 /// ## 使用範例
 /// ```rust
@@ -32,10 +32,10 @@ use syn::{parse_macro_input, DeriveInput, ItemImpl};
 ///  async fn init_depend() -> Vec<Depend> { ... }
 ///
 /// #[derive(Component)]
-/// #[scope = "prototype"]  // 指定為 singleton (預設) | lazy_singleton | prototype
+/// #[lifecycle = "ScopeNameRegex"] // Singleton | Singleton(Lazy) | Prototype // Singleton is default
 /// struct Foo {
 ///     #[component]
-///     service: Bean<Service>,
+///     service: Proxy<Service>,
 ///
 ///     #[value = "hello"]
 ///     name: String,
@@ -43,7 +43,7 @@ use syn::{parse_macro_input, DeriveInput, ItemImpl};
 ///     #[script(init_depend, cache)] // 啟用 cache 時回傳值必須可安全重用: T: Clone (可複製）| Arc<T>（共享不可變）
 ///     depend: Vec<Depend>,
 ///
-///     #[script(async || vec![1, 2, 3])]
+///     #[script(async |_| vec![1, 2, 3])]
 ///     arr: Vec<i32>,
 ///
 ///     cache: Cache, // Default::default()
@@ -52,7 +52,7 @@ use syn::{parse_macro_input, DeriveInput, ItemImpl};
 /// #[proxy_method] // 自動實作 Bean<Foo> 將 pub [async] fn(&[mut] self) -> T 包裝成 pub async fn(&self) -> T
 /// impl Foo { ... }
 /// ```
-#[proc_macro_derive(Component, attributes(component, value, script, scope))]
+#[proc_macro_derive(Component, attributes(component, value, script, lifecycle))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 

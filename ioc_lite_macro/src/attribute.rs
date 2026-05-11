@@ -98,15 +98,15 @@ pub fn get_field_attr(attrs: &[Attribute]) -> Result<FieldAttribute> {
     Ok(flag)
 }
 
-/// 從 Bean<T> 提取 T
-pub fn extract_bean_inner_type(ty: &Type) -> Option<&Type> {
+/// 從 Proxy<T> 提取 T
+pub fn extract_proxy_inner_type(ty: &Type) -> Option<&Type> {
     let Type::Path(type_path) = ty else {
         return None;
     };
 
     let segment = type_path.path.segments.last()?;
 
-    if segment.ident != "Bean" {
+    if segment.ident != "Proxy" {
         return None;
     }
 

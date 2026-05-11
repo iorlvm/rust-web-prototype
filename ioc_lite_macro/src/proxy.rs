@@ -1,11 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Visibility};
+use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Type, Visibility};
 
 pub fn expand_method(item: ItemImpl) -> TokenStream {
     let self_ty = &item.self_ty;
-    let struct_name = quote! { #self_ty }.to_string();
-    let ident = format_ident!("{}Proxy", struct_name);
+    let struct_name = quote! { #self_ty }.to_string().to_uppercase();
+    let ident = format_ident!("__PROXY_{}", struct_name);
 
     let mut func_wrap = Vec::new();
 
@@ -18,7 +18,7 @@ pub fn expand_method(item: ItemImpl) -> TokenStream {
             continue;
         }
 
-        if let Some(tokens) = build_proxy_method(method) {
+        if let Some(tokens) = build_proxy_method(self_ty, method) {
             func_wrap.push(tokens);
         }
     }
@@ -32,7 +32,7 @@ pub fn expand_method(item: ItemImpl) -> TokenStream {
     }
 }
 
-fn build_proxy_method(method: &ImplItemFn) -> Option<TokenStream> {
+fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenStream> {
     let sig = &method.sig;
     let ident = &sig.ident;
     let output = &sig.output;
@@ -75,6 +75,10 @@ fn build_proxy_method(method: &ImplItemFn) -> Option<TokenStream> {
                     ) #output {
                         let instance = self.inner.get_instance().await;
                         let mut instance = instance.write().await;
+                        let instance = instance
+                            .as_mut()
+                            .downcast_mut::<#self_ty>()
+                            .expect("bean instance type mismatch");
                         #invoke
                     }
                 })
@@ -85,6 +89,10 @@ fn build_proxy_method(method: &ImplItemFn) -> Option<TokenStream> {
                     ) #output {
                         let instance = self.inner.get_instance().await;
                         let instance = instance.read().await;
+                        let instance = instance
+                            .as_ref()
+                            .downcast_ref::<#self_ty>()
+                            .expect("bean instance type mismatch");
                         #invoke
                     }
                 })

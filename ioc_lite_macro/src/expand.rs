@@ -1,7 +1,8 @@
-use crate::attribute::{extract_bean_inner_type, get_field_attr, FieldAttribute};
+use crate::attribute::{extract_proxy_inner_type, get_field_attr, FieldAttribute};
 
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
+use regex::Regex;
 use syn::{Attribute, Data, DeriveInput, Error, Fields, FieldsNamed, Generics, Lit, Result};
 
 /// 展開 Component derive 實作
@@ -37,11 +38,11 @@ pub fn expand_component(input: DeriveInput) -> Result<proc_macro2::TokenStream> 
         ));
     }
 
-    let scope_value = get_scope_value(input.attrs.as_slice())?;
+    let lifecycle = get_lifecycle_value(input.attrs.as_slice())?;
     match fields {
-        Fields::Unit => expand_unit_struct_component(&scope_value, struct_name, generics),
+        Fields::Unit => expand_unit_struct_component(&lifecycle, struct_name, generics),
         Fields::Named(fields_named) => {
-            expand_named_struct_component(&scope_value, struct_name, generics, fields_named)
+            expand_named_struct_component(&lifecycle, struct_name, generics, fields_named)
         }
         Fields::Unnamed(_) => Err(Error::new_spanned(
             struct_name,
@@ -51,7 +52,7 @@ pub fn expand_component(input: DeriveInput) -> Result<proc_macro2::TokenStream> 
 }
 
 fn expand_named_struct_component(
-    scope: &Scope,
+    lifecycle: &Lifecycle,
     struct_name: Ident,
     generics: Generics,
     fields: FieldsNamed,
@@ -71,12 +72,12 @@ fn expand_named_struct_component(
 
         match get_field_attr(&field.attrs)? {
             FieldAttribute::Component => {
-                let component_type = match extract_bean_inner_type(&field_type) {
+                let component_type = match extract_proxy_inner_type(&field_type) {
                     Some(ty) => ty,
                     None => {
                         return Err(Error::new_spanned(
                             &field_type,
-                            "component type must be Bean<T>",
+                            "component type must be Proxy<T>",
                         ));
                     }
                 };
@@ -87,7 +88,7 @@ fn expand_named_struct_component(
 
                 // 生成 IoC 取用邏輯
                 field_initializers.push(quote! {
-                    #field_name: ioc.get::<#component_type>()
+                    #field_name: scope.get::<#component_type>()
                 });
             }
             FieldAttribute::None => {
@@ -115,10 +116,10 @@ fn expand_named_struct_component(
             FieldAttribute::Script(func, with_cache) => {
                 let initializers = if with_cache {
                     quote! {
-                        #field_name: ioc.run_script_with_cache(#func).await
+                        #field_name: scope.run_script_with_cache(#func).await
                     }
                 } else {
-                    quote! { #field_name: ioc.run_script(#func).await }
+                    quote! { #field_name: scope.run_script(#func).await }
                 };
 
                 field_initializers.push(initializers);
@@ -138,8 +139,8 @@ fn expand_named_struct_component(
         .unwrap_or_default();
 
     // 最終輸出（Component impl + registration）
-    let proxy_ident = format_ident!("{}Proxy", struct_name);
-    let registration = expand_component_registration(&scope, &struct_name);
+    let proxy_ident = format_ident!("__PROXY_{}", struct_name.to_string().to_uppercase());
+    let registration = expand_component_registration(&lifecycle, &struct_name);
     let expanded = quote! {
         pub struct #proxy_ident {
             inner: ::ioc_lite::Bean<#struct_name>
@@ -151,15 +152,15 @@ fn expand_named_struct_component(
             #existing_where_predicates
             #(#where_bounds,)*
         {
-            type Output = #proxy_ident;
+            type ProxyStruct = #proxy_ident;
 
-            fn proxy(input: ::ioc_lite::Bean<Self>) -> Self::Output {
+            fn proxy(input: ::ioc_lite::Bean<Self>) -> Self::ProxyStruct {
                 #proxy_ident {
                     inner: input
                 }
             }
 
-            async fn create(ioc: ::ioc_lite::IoC) -> Self {
+            async fn create(scope: std::sync::Arc<::ioc_lite::Scope>) -> Self {
                 Self {
                     #(#field_initializers,)*
                 }
@@ -177,26 +178,26 @@ fn expand_named_struct_component(
 /// - 直接回傳 Self
 /// - 不做 IoC 注入
 fn expand_unit_struct_component(
-    scope: &Scope,
+    lifecycle: &Lifecycle,
     struct_name: Ident,
     generics: Generics,
 ) -> Result<proc_macro2::TokenStream> {
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
-    let proxy_ident = format_ident!("{}Proxy", struct_name);
-    let registration = expand_component_registration(&scope, &struct_name);
+    let proxy_ident = format_ident!("__PROXY_{}", struct_name.to_string().to_uppercase());
+    let registration = expand_component_registration(&lifecycle, &struct_name);
     let expanded = quote! {
         #[::ioc_lite::async_trait]
         impl #impl_generics ::ioc_lite::Component for #struct_name #type_generics #where_clause {
-             type Output = #proxy_ident;
+             type ProxyStruct = #proxy_ident;
 
-             fn proxy(input: ::ioc_lite::Bean<Self>) -> Self::Output {
+             fn proxy(input: ::ioc_lite::Bean<Self>) -> Self::ProxyStruct {
                 #proxy_ident {
                     inner: input
                 }
             }
 
-            async fn create(ioc: ::ioc_lite::IoC) -> Self {
+            async fn create(scope: std::sync::Arc<::ioc_lite::Scope>) -> Self {
                 Self
             }
         }
@@ -212,17 +213,25 @@ fn expand_unit_struct_component(
 /// 作用：
 /// - runtime 掃描所有 Component
 /// - IoC 容器可動態建立 instance
-fn expand_component_registration(scope: &Scope, struct_name: &Ident) -> proc_macro2::TokenStream {
-    let scope_token = match scope {
-        Scope::Prototype => quote! { ::ioc_lite::ScopeType::Prototype },
-        Scope::Singleton(mode) => match mode {
+fn expand_component_registration(
+    lifecycle: &Lifecycle,
+    struct_name: &Ident,
+) -> proc_macro2::TokenStream {
+    let scope_token = match lifecycle {
+        Lifecycle::Prototype => {
+            quote! { ::ioc_lite::Lifecycle::Prototype }
+        }
+        Lifecycle::Singleton(mode) => match mode {
             InitMode::Eager => {
-                quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Eager) }
+                quote! { ::ioc_lite::Lifecycle::Singleton(::ioc_lite::InitMode::Eager) }
             }
             InitMode::Lazy => {
-                quote! { ::ioc_lite::ScopeType::Singleton(::ioc_lite::InitMode::Lazy) }
+                quote! { ::ioc_lite::Lifecycle::Singleton(::ioc_lite::InitMode::Lazy) }
             }
         },
+        Lifecycle::Scoped(name_format) => {
+            quote! { ::ioc_lite::Lifecycle::Scoped(::ioc_lite::Regex::new(#name_format).unwrap()) }
+        }
     };
 
     quote! {
@@ -243,16 +252,17 @@ enum InitMode {
     Lazy,
 }
 
-enum Scope {
-    Singleton(InitMode),
+enum Lifecycle {
     Prototype,
+    Singleton(InitMode),
+    Scoped(String),
 }
 
-fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
+fn get_lifecycle_value(attrs: &[Attribute]) -> Result<Lifecycle> {
     attrs
         .iter()
         .find_map(|attr| {
-            if !attr.path().is_ident("scope") {
+            if !attr.path().is_ident("lifecycle") {
                 return None;
             }
 
@@ -269,13 +279,21 @@ fn get_scope_value(attrs: &[Attribute]) -> Result<Scope> {
             }
         })
         .map(|v| match v.as_str() {
-            "prototype" => Ok(Scope::Prototype),
-            "singleton" => Ok(Scope::Singleton(InitMode::Eager)),
-            "lazy_singleton" => Ok(Scope::Singleton(InitMode::Lazy)),
-            _ => Err(Error::new_spanned(
-                v,
-                "invalid scope, expected 'singleton'|'lazy_singleton'|'prototype'",
-            )),
+            "Prototype" => Ok(Lifecycle::Prototype),
+            "Singleton" => Ok(Lifecycle::Singleton(InitMode::Eager)),
+            "Singleton(Lazy)" => Ok(Lifecycle::Singleton(InitMode::Lazy)),
+            name_format => {
+                let test = Regex::new(name_format);
+
+                if let Err(error) = test {
+                    return Err(Error::new_spanned(
+                        v,
+                        format!("invalid lifecycle regex: {}", error),
+                    ));
+                }
+
+                Ok(Lifecycle::Scoped(name_format.to_string()))
+            }
         })
-        .unwrap_or(Ok(Scope::Singleton(InitMode::Eager)))
+        .unwrap_or(Ok(Lifecycle::Singleton(InitMode::Eager)))
 }

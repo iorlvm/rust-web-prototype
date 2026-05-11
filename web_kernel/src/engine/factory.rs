@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::engine::Kernel;
 use crate::error::{
     DefaultFrameworkErrorHandler, ErrorDispatcher, ExternalErrorHandler, FrameworkErrorHandler,
@@ -26,7 +27,7 @@ pub type ExternalErrorHandlerBox = Box<dyn ExternalErrorHandler>;
 
 #[async_trait]
 pub trait KernelFactory<T: Send + Sync + 'static>: Send + Sync + 'static {
-    async fn build_injected(&self) -> T;
+    async fn build_injected(&self) -> Arc<T>;
 
     fn handlers(&self) -> Vec<Handler> {
         vec![]

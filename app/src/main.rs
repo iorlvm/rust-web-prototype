@@ -7,6 +7,7 @@ mod security;
 use crate::security::middleware::JwtAuthMiddleware;
 use async_trait::async_trait;
 use ioc_lite::{IoC, IoCBuilder};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use web_kernel::engine::factory::{KernelFactory, MiddlewareChain};
 use web_kernel::run;
@@ -16,8 +17,12 @@ pub struct TestKernelFactory {}
 
 #[async_trait]
 impl KernelFactory<IoC> for TestKernelFactory {
-    async fn build_injected(&self) -> IoC {
-        IoCBuilder::new().build_with_test().await
+    async fn build_injected(&self) -> Arc<IoC> {
+        let mut build = IoCBuilder::new();
+
+        build.auto_register();
+
+        build.build_with_test().await.into()
     }
 
     fn additional_middleware(&self) -> MiddlewareChain {

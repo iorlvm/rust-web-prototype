@@ -133,7 +133,7 @@ pub async fn user_rename(ctx: &mut Context, _: &mut Request) -> Result<Response,
     let user_id = user_id.unwrap();
 
     let ioc = ctx.get_injected::<IoC>();
-    let mut repo = ioc.get::<UserRepository>();
+    let repo = ioc.get::<UserRepository>();
     let user = repo.find_by_id(user_id).await;
     if user.is_none() {
         return Err(KernelError::External(

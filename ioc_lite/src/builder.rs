@@ -1,8 +1,8 @@
 use crate::internal::IoCBuilderScript;
-use crate::{Component, IoC, Item, ScopeType};
+use crate::{Component, ComponentDefinition, IoC, Lifecycle};
+use dashmap::DashMap;
 use std::any::TypeId;
 use std::collections::HashMap;
-use tokio::sync::RwLock;
 
 // 自動註冊機制
 inventory::collect!(ComponentRegistration);
@@ -10,74 +10,81 @@ pub struct ComponentRegistration {
     pub register: fn(builder: &mut IoCBuilder) -> (),
 }
 
-// 將 register 與 runtime 分離, 降低資源管理複雜度
+#[derive(Clone)]
 pub struct IoCBuilder {
-    map: HashMap<TypeId, Item>,
-}
-
-impl Clone for IoCBuilder {
-    fn clone(&self) -> Self {
-        Self {
-            map: self
-                .map
-                .iter()
-                .map(|(type_id, (name, scope_type, force_warmup, _))| {
-                    (
-                        *type_id,
-                        (
-                            name.clone(),
-                            scope_type.clone(),
-                            *force_warmup,
-                            RwLock::new(None),
-                        ),
-                    )
-                })
-                .collect::<HashMap<TypeId, Item>>(),
-        }
-    }
+    script_input: Option<serde_json::Value>,
+    map: HashMap<TypeId, ComponentDefinition>,
 }
 
 impl IoCBuilder {
     pub fn new() -> Self {
-        let mut builder = Self {
+        Self {
+            script_input: None,
             map: HashMap::new(),
-        };
-
-        inventory::iter::<ComponentRegistration>
-            .into_iter()
-            .for_each(|reg| (reg.register)(&mut builder));
-
-        builder
+        }
     }
 
-    pub fn register<T>(&mut self, scope_type: ScopeType)
+    pub fn auto_register(&mut self) {
+        inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .for_each(|reg| (reg.register)(self));
+    }
+
+    pub fn register<T: Component>(&mut self, lifecycle: Lifecycle)
     where
         T: Component,
     {
         self.map.insert(
             TypeId::of::<T>(),
-            (
-                std::any::type_name::<T>().to_string(),
-                scope_type,
-                |ioc| {
+            ComponentDefinition {
+                lifecycle,
+                name: &std::any::type_name::<T>(),
+                warmup_fn: |scope| {
                     Box::pin(async move {
-                        ioc.force_warmup::<T>().await;
+                        scope.force_warmup::<T>().await;
                     })
                 },
-                RwLock::new(None),
-            ),
+            },
         );
     }
 
+    pub fn script_input(mut self, script_input: serde_json::Value) -> Self {
+        self.script_input = Some(script_input);
+        self
+    }
+
     pub async fn build_with_test(self) -> IoC {
-        let test_ioc = IoC::new(self.clone().map).into_test_mode();
-        test_ioc.run_test().await;
+        if self.map.is_empty() {
+            println!(
+                "[IoC] No registered components found, test script cannot be executed."
+            );
+        } else {
+            let cloned = self.clone();
+
+            let test_ioc = IoC::new(
+                cloned.script_input.unwrap_or_else(|| serde_json::json!({})),
+                cloned.map,
+                Some(DashMap::new()),
+            );
+            test_ioc.run_test().await;
+        }
 
         self.build().await
     }
 
     pub async fn build(self) -> IoC {
-        let ioc = IoC::new(self.map);
+        if self.map.is_empty() {
+            println!(
+                "[IoC] No lifecycle metadata registered, components will use Prototype fallback."
+            );
+        } else {
+            println!("[IoC] Note: Unregistered components will use Prototype lifecycle.");
+        }
+        let ioc = IoC::new(
+            self.script_input.unwrap_or_else(|| serde_json::json!({})),
+            self.map,
+            None,
+        );
         ioc.on_build().await;
         ioc
     }

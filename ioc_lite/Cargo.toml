@@ -9,3 +9,5 @@ inventory = "0.3"
 tokio = { version = "1.52.2", features = ["sync", "rt", "rt-multi-thread"] }
 dashmap = "6"
 async-trait = "0.1"
+serde_json = "1.0.149"
+regex = "1.12.3"

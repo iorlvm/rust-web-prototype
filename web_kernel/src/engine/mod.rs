@@ -21,13 +21,13 @@ pub struct Kernel<T: Send + Sync + 'static> {
 
 impl<T: Send + Sync + 'static> Kernel<T> {
     pub fn new(
-        injected: T,
+        injected: Arc<T>,
         registry: HandlerRegistry,
         middleware: Vec<Box<dyn Middleware>>,
         error_responder: ErrorDispatcher,
     ) -> Self {
         Self {
-            injected: Arc::new(injected),
+            injected,
             registry,
             middleware,
             error_dispatcher: error_responder,

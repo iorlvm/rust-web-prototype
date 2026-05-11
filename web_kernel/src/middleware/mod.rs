@@ -14,8 +14,8 @@ pub trait Middleware: Send + Sync {
     ) -> Result<Option<Response>, KernelError>;
     async fn after(
         &self,
-        ctx: &mut Context,
-        req: &Request,
+        _ctx: &mut Context,
+        _req: &Request,
         result: Result<Response, KernelError>,
     ) -> Result<Response, KernelError> {
         result
