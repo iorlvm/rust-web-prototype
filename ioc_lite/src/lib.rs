@@ -6,7 +6,6 @@ pub use builder::{ComponentRegistration, IoCBuilder};
 pub use core::*;
 
 pub use regex::Regex;
-pub use async_trait::async_trait;
 pub use ioc_lite_macro::{proxy_method, Component};
 
 use std::any::Any;
@@ -42,11 +41,10 @@ pub enum Lifecycle {
     Scoped(Regex),
 }
 
-#[async_trait]
 pub trait Component: Sized + Send + Sync + 'static {
     type ProxyStruct: Sized;
     fn proxy(input: Bean<Self>) -> Self::ProxyStruct;
-    async fn create(scope: Arc<Scope>) -> Self;
+    fn create(scope: Arc<Scope>) -> impl Future<Output = Self> + Send;
 }
 
 pub struct Proxy<T: Component> {

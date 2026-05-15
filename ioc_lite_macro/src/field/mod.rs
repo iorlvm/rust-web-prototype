@@ -26,10 +26,6 @@ pub trait FieldIRFactory {
 }
 
 pub trait FieldIR {
-    fn where_bound(&self) -> Option<proc_macro2::TokenStream> {
-        None
-    }
-
     fn initializer(&self) -> proc_macro2::TokenStream;
 }
 

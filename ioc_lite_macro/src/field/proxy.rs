@@ -56,7 +56,7 @@ fn extract_proxy_inner_type(ty: &Type) -> Option<&Type> {
 
     let segment = type_path.path.segments.last()?;
 
-    if segment.ident != "::ioc_lite::Proxy" {
+    if segment.ident != "Proxy" {
         return None;
     }
 

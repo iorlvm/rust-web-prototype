@@ -33,6 +33,19 @@ impl<T: Component> Bean<T> {
             .await;
         instance.clone()
     }
+    pub fn downcast_ref<'a>(&self, obj: &'a Object) -> & 'a T {
+        obj.downcast_ref::<T>().expect(&format!(
+            "Bean type mismatch: expected {}",
+            std::any::type_name::<T>()
+        ))
+    }
+
+    pub fn downcast_mut<'a>(&self, obj: &'a mut Object) -> & 'a mut T {
+        obj.downcast_mut::<T>().expect(&format!(
+            "Bean type mismatch: expected {}",
+            std::any::type_name::<T>()
+        ))
+    }
 }
 
 pub struct Scope {

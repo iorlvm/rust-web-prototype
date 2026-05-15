@@ -19,25 +19,13 @@ impl InitMode {
     }
 }
 pub enum RegistrationIR {
-    None,
     Prototype(Ident),
     Singleton(Ident, InitMode),
     Scoped(Ident, Regex),
 }
 impl RegistrationIR {
-    pub fn from(struct_name: &Ident, has_generics: bool, attrs: &[Attribute]) -> Result<Self> {
+    pub fn from(struct_name: &Ident, attrs: &[Attribute]) -> Result<Self> {
         let attr = extract_lifecycle(attrs);
-
-        if has_generics && attr.is_none() {
-            return Err(Error::new_spanned(
-                struct_name,
-                "generic structs cannot participate in automatic lifecycle registration",
-            ));
-        }
-
-        if has_generics {
-            return Ok(RegistrationIR::None);
-        }
 
         let struct_name = struct_name.clone();
 
@@ -80,7 +68,6 @@ impl RegistrationIR {
                     quote! { ::ioc_lite::Lifecycle::Scoped(::ioc_lite::Regex::new(#name_format).unwrap()) },
                 )
             }
-            RegistrationIR::None => return quote! {},
         };
 
         quote! {

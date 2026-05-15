@@ -1,11 +1,11 @@
+use crate::utils::{print_debug_info, proxy_struct_ident, ExtraInfo};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use syn::{FnArg, ImplItem, ImplItemFn, ItemImpl, Type, Visibility};
 
 pub fn expand_method(item: ItemImpl) -> TokenStream {
     let self_ty = &item.self_ty;
-    let struct_name = quote! { #self_ty }.to_string().to_uppercase();
-    let ident = format_ident!("__PROXY_{}", struct_name);
+    let ident = proxy_struct_ident(&quote! { #self_ty }.to_string());
 
     let mut func_wrap = Vec::new();
 
@@ -23,12 +23,16 @@ pub fn expand_method(item: ItemImpl) -> TokenStream {
         }
     }
 
-    quote! {
-        #item
-
+    let expanded = quote! {
         impl #ident {
             #(#func_wrap)*
         }
+    };
+    print_debug_info(&expanded, ExtraInfo::new(None, None));
+
+    quote! {
+        #item
+        #expanded
     }
 }
 
@@ -60,11 +64,11 @@ fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenS
 
             let invoke = if is_async {
                 quote! {
-                    instance.#ident(#(#arg_names),*).await
+                    provider.#ident(#(#arg_names),*).await
                 }
             } else {
                 quote! {
-                    instance.#ident(#(#arg_names),*)
+                    provider.#ident(#(#arg_names),*)
                 }
             };
 
@@ -74,11 +78,8 @@ fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenS
                         &self, #(#args),*
                     ) #output {
                         let instance = self.inner.get_instance().await;
-                        let mut instance = instance.write().await;
-                        let instance = instance
-                            .as_mut()
-                            .downcast_mut::<#self_ty>()
-                            .expect("bean instance type mismatch");
+                        let mut guard = instance.write().await;
+                        let provider = self.inner.downcast_mut(guard.as_mut());
                         #invoke
                     }
                 })
@@ -88,11 +89,8 @@ fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenS
                         &self, #(#args),*
                     ) #output {
                         let instance = self.inner.get_instance().await;
-                        let instance = instance.read().await;
-                        let instance = instance
-                            .as_ref()
-                            .downcast_ref::<#self_ty>()
-                            .expect("bean instance type mismatch");
+                        let guard = instance.read().await;
+                        let provider = self.inner.downcast_ref(guard.as_ref());
                         #invoke
                     }
                 })

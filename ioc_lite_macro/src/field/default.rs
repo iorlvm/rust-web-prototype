@@ -18,13 +18,6 @@ impl DefaultFieldIR {
 }
 
 impl FieldIR for DefaultFieldIR {
-    fn where_bound(&self) -> Option<TokenStream> {
-        let field_type = &self.field_type;
-        Some(quote! {
-            #field_type: ::std::default::Default
-        })
-    }
-
     fn initializer(&self) -> TokenStream {
         let field_name = &self.field_name;
         let field_type = &self.field_type;

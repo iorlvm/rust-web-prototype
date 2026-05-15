@@ -2,6 +2,7 @@ mod component;
 mod field;
 mod proxy_method;
 mod registration;
+mod utils;
 
 use proc_macro::TokenStream;
 use syn::{parse_macro_input, DeriveInput, ItemImpl};
@@ -57,10 +58,9 @@ use syn::{parse_macro_input, DeriveInput, ItemImpl};
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    match component::ComponentIR::from(input) {
-        Ok(ir) => ir.token().into(),
-        Err(error) => error.to_compile_error().into(),
-    }
+    component::ComponentIR::from(input)
+        .map(|ir| ir.token().into())
+        .unwrap_or_else(|error| error.to_compile_error().into())
 }
 
 #[proc_macro_attribute]

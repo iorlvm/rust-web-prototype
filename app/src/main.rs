@@ -3,6 +3,7 @@ pub mod error;
 mod model;
 pub mod repository;
 mod security;
+mod test;
 
 use crate::security::middleware::JwtAuthMiddleware;
 use async_trait::async_trait;
