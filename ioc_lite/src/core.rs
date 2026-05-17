@@ -2,8 +2,8 @@ use crate::internal::{IoCBuilderScript, TestTrace};
 use crate::{
     BeanInstance, CacheInstance, Component, ComponentDefinition, InitMode, Lifecycle, Object, Proxy,
 };
-use dashmap::DashMap;
-use std::any::TypeId;
+use dashmap::{DashMap, DashSet};
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -12,39 +12,26 @@ use tokio::sync::{OnceCell, RwLock};
 
 // Bean is Proxy
 pub struct Bean<T: Component> {
-    _mark: std::marker::PhantomData<T>,
     scope: Arc<Scope>,
-    instance: OnceCell<BeanInstance>,
+    instance: OnceCell<BeanInstance<T>>,
 }
 
 impl<T: Component> Bean<T> {
     fn new(scope: Arc<Scope>) -> Self {
         Self {
-            _mark: std::marker::PhantomData,
             scope,
             instance: OnceCell::new(),
         }
     }
 
-    pub async fn get_instance(&self) -> BeanInstance {
-        let instance = self
-            .instance
-            .get_or_init(|| self.scope.get_raw_instance_with_cache::<T>())
-            .await;
-        instance.clone()
-    }
-    pub fn downcast_ref<'a>(&self, obj: &'a Object) -> & 'a T {
-        obj.downcast_ref::<T>().expect(&format!(
-            "Bean type mismatch: expected {}",
-            std::any::type_name::<T>()
-        ))
+    async fn init_instance(&self) -> BeanInstance<T> {
+        let instance = self.scope.get_raw_instance_with_cache::<T>().await;
+        instance.downcast().expect("Bean type mismatch")
     }
 
-    pub fn downcast_mut<'a>(&self, obj: &'a mut Object) -> & 'a mut T {
-        obj.downcast_mut::<T>().expect(&format!(
-            "Bean type mismatch: expected {}",
-            std::any::type_name::<T>()
-        ))
+    pub async fn get_instance(&self) -> BeanInstance<T> {
+        let instance = self.instance.get_or_init(|| self.init_instance()).await;
+        instance.clone()
     }
 }
 
@@ -59,7 +46,7 @@ pub struct Scope {
     registry: Arc<HashMap<TypeId, ComponentDefinition>>,
     script_cache: Arc<DashMap<TypeId, Box<Object>>>,
     counter: Arc<AtomicU64>,
-    test_trace: Arc<Option<DashMap<TypeId, ()>>>,
+    test_trace: Arc<Option<DashSet<TypeId>>>,
 }
 
 impl Scope {
@@ -175,7 +162,7 @@ impl Scope {
     // internal methods
     fn get_raw_instance<T: Component>(
         self: &Arc<Self>,
-    ) -> Pin<Box<dyn Future<Output = BeanInstance> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Arc<Object>> + Send>> {
         let parent_opt = self.parent.clone();
         let self_clone = self.clone();
 
@@ -197,14 +184,15 @@ impl Scope {
                     }
                     self_clone.exit_trace(&type_id);
 
-                    let boxed = Box::new(value) as Box<Object>;
-                    Arc::new(RwLock::new(boxed))
+                    let locked = RwLock::new(value);
+                    let bean = Arc::new(locked);
+                    bean as Arc<dyn Any + Send + Sync>
                 }
             }
         })
     }
 
-    async fn get_raw_instance_with_cache<T: Component>(self: &Arc<Self>) -> BeanInstance {
+    async fn get_raw_instance_with_cache<T: Component>(self: &Arc<Self>) -> Arc<Object> {
         match self.isolated_map.get(&TypeId::of::<T>()) {
             None => self.get_raw_instance::<T>().await,
             Some(cell) => cell
@@ -225,7 +213,7 @@ impl IoC {
     pub fn new(
         script_input: serde_json::Value,
         registry: HashMap<TypeId, ComponentDefinition>,
-        test_trace: Option<DashMap<TypeId, ()>>,
+        test_trace: Option<DashSet<TypeId>>,
     ) -> Self {
         let mut isolated_map = HashMap::new();
         registry
@@ -281,7 +269,7 @@ impl IoC {
 
 // internal methods
 impl TestTrace for Scope {
-    fn test_trace(&self) -> &Option<DashMap<TypeId, ()>> {
+    fn test_trace(&self) -> &Option<DashSet<TypeId>> {
         &self.test_trace
     }
 }

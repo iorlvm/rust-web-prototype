@@ -16,8 +16,8 @@ use tokio::sync::{OnceCell, RwLock};
 
 // types
 pub type Object = dyn Any + Send + Sync;
-pub type BeanInstance = Arc<RwLock<Box<Object>>>;
-pub type CacheInstance = RwLock<OnceCell<BeanInstance>>;
+pub type BeanInstance<T> = Arc<RwLock<T>>;
+pub type CacheInstance = RwLock<OnceCell<Arc<Object>>>;
 
 pub type ComponentWarmupFn = fn(scope: Arc<Scope>) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 

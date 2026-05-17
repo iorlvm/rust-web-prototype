@@ -64,11 +64,11 @@ fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenS
 
             let invoke = if is_async {
                 quote! {
-                    provider.#ident(#(#arg_names),*).await
+                    guard.#ident(#(#arg_names),*).await
                 }
             } else {
                 quote! {
-                    provider.#ident(#(#arg_names),*)
+                    guard.#ident(#(#arg_names),*)
                 }
             };
 
@@ -79,7 +79,6 @@ fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenS
                     ) #output {
                         let instance = self.inner.get_instance().await;
                         let mut guard = instance.write().await;
-                        let provider = self.inner.downcast_mut(guard.as_mut());
                         #invoke
                     }
                 })
@@ -90,7 +89,6 @@ fn build_proxy_method(self_ty: &Box<Type>, method: &ImplItemFn) -> Option<TokenS
                     ) #output {
                         let instance = self.inner.get_instance().await;
                         let guard = instance.read().await;
-                        let provider = self.inner.downcast_ref(guard.as_ref());
                         #invoke
                     }
                 })

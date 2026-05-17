@@ -1,8 +1,8 @@
-use dashmap::DashMap;
+use dashmap::DashSet;
 use std::any::TypeId;
 
 pub trait TestTrace {
-    fn test_trace(&self) -> &Option<DashMap<TypeId, ()>>;
+    fn test_trace(&self) -> &Option<DashSet<TypeId>>;
 
     fn in_test(&self) -> bool {
         self.test_trace().is_some()
@@ -10,7 +10,7 @@ pub trait TestTrace {
 
     fn check_circular_dependency(&self, type_id: &TypeId) -> () {
         if let Some(test_trace) = &self.test_trace() {
-            if test_trace.contains_key(&type_id) {
+            if test_trace.contains(&type_id) {
                 panic!("circular dependency detected");
             }
         }
@@ -18,7 +18,7 @@ pub trait TestTrace {
 
     fn enter_trace(&self, type_id: &TypeId) {
         if let Some(test_trace) = &self.test_trace() {
-            test_trace.insert(type_id.clone(), ());
+            test_trace.insert(type_id.clone());
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::internal::IoCBuilderScript;
 use crate::{Component, ComponentDefinition, IoC, Lifecycle};
-use dashmap::DashMap;
+use dashmap::DashSet;
 use std::any::TypeId;
 use std::collections::HashMap;
 
@@ -55,16 +55,14 @@ impl IoCBuilder {
 
     pub async fn build_with_test(self) -> IoC {
         if self.map.is_empty() {
-            println!(
-                "[IoC] No registered components found, test script cannot be executed."
-            );
+            println!("[IoC] No registered components found, test script cannot be executed.");
         } else {
             let cloned = self.clone();
 
             let test_ioc = IoC::new(
                 cloned.script_input.unwrap_or_else(|| serde_json::json!({})),
                 cloned.map,
-                Some(DashMap::new()),
+                Some(DashSet::new()),
             );
             test_ioc.run_test().await;
         }
